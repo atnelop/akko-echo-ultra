@@ -68,7 +68,7 @@ $key = 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\AkkoEchoUltra'
 New-Item $key -Force | Out-Null
 $size = [int]((Get-ChildItem $dir -Recurse -File | Measure-Object Length -Sum).Sum / 1KB)
 $values = @{
-    DisplayName = 'Akko Echo Ultra'; DisplayVersion = '1.2.1'; Publisher = 'Akko Echo Ultra (projeto pessoal)'
+    DisplayName = 'Akko Echo Ultra'; DisplayVersion = '1.2.2'; Publisher = 'Akko Echo Ultra (projeto pessoal)'
     DisplayIcon = "$dir\AkkoEchoUltra.exe,0"; InstallLocation = $dir
     UninstallString = "powershell.exe -NoProfile -ExecutionPolicy Bypass -File `"$dir\desinstalar.ps1`""
 }

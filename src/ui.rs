@@ -195,6 +195,9 @@ fn font(size: f32, bold: bool) -> FontId {
 /// Pasta com as imagens e fontes do app da Akko: a cópia instalada junto com este programa
 /// ("akko" ao lado do .exe, feita pelo instalador) ou, se não houver, o app da Akko instalado.
 fn akko_dir() -> std::path::PathBuf {
+    if std::env::var_os("AKKO_ECHO_SEM_AKKO").is_some() {
+        return std::path::PathBuf::from(r"C:\nao-existe");
+    }
     let own = std::env::current_exe().ok().and_then(|e| e.parent().map(|d| d.join("akko")));
     match own {
         Some(d) if d.join("Skin").is_dir() => d,
@@ -204,15 +207,18 @@ fn akko_dir() -> std::path::PathBuf {
 
 fn setup_fonts(ctx: &egui::Context) {
     let mut fonts = egui::FontDefinitions::default();
-    let dir = akko_dir().join("Font");
-    if let Ok(b) = std::fs::read(dir.join("MiSans-Normal.ttf")) {
-        fonts.font_data.insert("misans".into(), egui::FontData::from_owned(b));
-        fonts.families.get_mut(&FontFamily::Proportional).unwrap().insert(0, "misans".into());
+    // MiSans (a fonte do app da Akko) ou, sem ela, a Segoe UI que vem com o Windows.
+    let akko = akko_dir().join("Font");
+    let win = std::path::Path::new(r"C:\Windows\Fonts");
+    let read = |files: [std::path::PathBuf; 2]| files.iter().find_map(|f| std::fs::read(f).ok());
+    if let Some(b) = read([akko.join("MiSans-Normal.ttf"), win.join("segoeui.ttf")]) {
+        fonts.font_data.insert("regular".into(), egui::FontData::from_owned(b));
+        fonts.families.get_mut(&FontFamily::Proportional).unwrap().insert(0, "regular".into());
     }
     let mut sb = fonts.families.get(&FontFamily::Proportional).cloned().unwrap_or_default();
-    if let Ok(b) = std::fs::read(dir.join("MiSans-Semibold.ttf")) {
-        fonts.font_data.insert("misans_sb".into(), egui::FontData::from_owned(b));
-        sb.insert(0, "misans_sb".into());
+    if let Some(b) = read([akko.join("MiSans-Semibold.ttf"), win.join("seguisb.ttf")]) {
+        fonts.font_data.insert("semibold".into(), egui::FontData::from_owned(b));
+        sb.insert(0, "semibold".into());
     }
     fonts.families.insert(semibold(), sb);
     ctx.set_fonts(fonts);
@@ -343,6 +349,90 @@ fn icon_device(ui: &egui::Ui, c: Pos2) {
     ui.painter().add(Shape::convex_polygon(pts, PURPLE_LIGHT, Stroke::NONE));
     let d = Vec2::new(ang.sin(), -ang.cos());
     ui.painter().line_segment([c + d * -9.0, c + d * -4.0], Stroke::new(2.0_f32, Color32::from_rgb(0x3a, 0x22, 0x80)));
+}
+
+/* ---------------- desenho do mouse (sem a foto do app da Akko) ---------------- */
+
+/// TAN8 Ultra visto de cima, desenhado (para quando a foto do app da Akko não está disponível):
+/// casco escuro vazado em hexágonos, rodinha, divisão dos botões, faixas laterais cor de cobre e
+/// o LED. `c` é o centro e `h` a altura.
+fn draw_mouse(pa: &egui::Painter, c: Pos2, h: f32) {
+    let w = h * 0.6;
+    // meia largura relativa ao longo do comprimento (v = -1 na frente, 1 atrás)
+    let half = |v: f32| (1.0 - v * v).max(0.0).powf(0.38) * (0.84 + 0.16 * (v + 1.0) / 2.0);
+    let n = 90;
+    let mut outline = Vec::with_capacity(2 * n + 2);
+    for i in 0..=n {
+        let v = -1.0 + 2.0 * i as f32 / n as f32;
+        outline.push(p(c.x + half(v) * w / 2.0, c.y + v * h / 2.0));
+    }
+    for i in (0..=n).rev() {
+        let v = -1.0 + 2.0 * i as f32 / n as f32;
+        outline.push(p(c.x - half(v) * w / 2.0, c.y + v * h / 2.0));
+    }
+    let edge = Color32::from_rgb(0x3c, 0x3c, 0x3c);
+    pa.add(Shape::convex_polygon(outline.clone(), Color32::from_rgb(0x14, 0x14, 0x14), Stroke::NONE));
+
+    // vazados hexagonais no casco (da metade dos botões para trás)
+    let r_hex = h * 0.05;
+    let (dxh, dyh) = (r_hex * 1.75, r_hex * 1.52);
+    let mut row = 0;
+    let mut y = c.y - h * 0.08;
+    while y < c.y + h * 0.44 {
+        let v = (y - c.y) / (h / 2.0);
+        let lim = half(v) * w / 2.0 - r_hex * 1.15;
+        let off = if row % 2 == 0 { 0.0 } else { dxh / 2.0 };
+        let mut x = -lim + off;
+        while x <= lim {
+            // fora da faixa central (a "espinha" do casco)
+            if x.abs() > r_hex * 0.7 {
+                let hex: Vec<Pos2> = (0..6)
+                    .map(|k| {
+                        let a = std::f32::consts::FRAC_PI_3 * k as f32 + std::f32::consts::FRAC_PI_6;
+                        p(c.x + x + r_hex * 0.82 * a.cos(), y + r_hex * 0.82 * a.sin())
+                    })
+                    .collect();
+                pa.add(Shape::convex_polygon(hex, Color32::from_rgb(0x08, 0x08, 0x08), Stroke::new(1.0_f32, Color32::from_rgb(0x2a, 0x2a, 0x2a))));
+            }
+            x += dxh;
+        }
+        y += dyh;
+        row += 1;
+    }
+
+    // contorno, divisão dos botões e fim dos botões
+    pa.add(Shape::closed_line(outline, Stroke::new(1.6_f32, edge)));
+    let split = c.y - h * 0.12;
+    pa.line_segment([p(c.x, c.y - h / 2.0 + 2.0), p(c.x, split)], Stroke::new(1.4_f32, edge));
+    let arc: Vec<Pos2> = (0..=20)
+        .map(|k| {
+            let u = -1.0 + 2.0 * k as f32 / 20.0;
+            let v = (split - c.y) / (h / 2.0);
+            p(c.x + u * half(v) * w / 2.0 * 0.96, split + (1.0 - u * u) * h * 0.025)
+        })
+        .collect();
+    pa.add(Shape::line(arc, Stroke::new(1.4_f32, edge)));
+
+    // faixas laterais cor de cobre
+    let copper = Color32::from_rgb(0xb4, 0x86, 0x66);
+    for side in [-1.0_f32, 1.0] {
+        let pts: Vec<Pos2> = (0..=16)
+            .map(|k| {
+                let v = -0.78 + 0.6 * k as f32 / 16.0;
+                p(c.x + side * (half(v) * w / 2.0 - h * 0.035), c.y + v * h / 2.0)
+            })
+            .collect();
+        pa.add(Shape::line(pts, Stroke::new(2.0_f32, copper)));
+    }
+
+    // rodinha com sulcos e o LED
+    let wheel = Rect::from_center_size(p(c.x, c.y - h * 0.31), Vec2::new(w * 0.11, h * 0.14));
+    pa.rect(wheel, Rounding::same(w * 0.05), Color32::from_rgb(0x22, 0x22, 0x22), Stroke::new(1.2_f32, Color32::from_rgb(0x50, 0x50, 0x50)));
+    for k in 1..6 {
+        let yy = wheel.top() + wheel.height() * k as f32 / 6.0;
+        pa.line_segment([p(wheel.left() + 2.0, yy), p(wheel.right() - 2.0, yy)], Stroke::new(1.0_f32, Color32::from_rgb(0x3a, 0x3a, 0x3a)));
+    }
+    pa.circle_filled(p(c.x, c.y - h * 0.42), h * 0.009, Color32::from_rgb(0xf0, 0xf0, 0xf0));
 }
 
 /* ---------------- foto do mouse (do app da Akko, se instalado) ---------------- */
@@ -958,6 +1048,8 @@ impl App {
             let w = size.x / size.y * h;
             let rect = Rect::from_min_size(p(855.0 - w / 2.0, 222.0), Vec2::new(w, h));
             ui.painter().image(tex.id(), rect, Rect::from_min_max(Pos2::ZERO, p(1.0, 1.0)), Color32::WHITE);
+        } else {
+            draw_mouse(ui.painter(), p(855.0, 350.0), 240.0);
         }
         let row = r(792.0, 490.0, 960.0, 510.0);
         let resp = ui.interact(row, ui.id().with("about_startup"), Sense::click());
@@ -1009,6 +1101,8 @@ impl App {
             let w = size.x / size.y * h;
             let rect = Rect::from_center_size(p(715.0 + dx, 398.0), Vec2::new(w, h));
             ui.painter().image(tex.id(), rect, Rect::from_min_max(Pos2::ZERO, p(1.0, 1.0)), Color32::WHITE);
+        } else {
+            draw_mouse(ui.painter(), p(715.0 + dx, 398.0), 300.0);
         }
         if !self.status(ui) {
             return;

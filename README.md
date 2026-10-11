@@ -25,7 +25,7 @@ O programa vai para `C:\Program Files\Akko Echo Ultra`, com atalho no menu Inici
 
 > Não use junto com o app da Akko: os dois falando com o mouse ao mesmo tempo corrompem a memória dele. O Echo Ultra pausa sozinho enquanto o `Akko.exe` estiver aberto.
 >
-> Com o app da Akko instalado, o Echo Ultra usa as fontes, as fotos do mouse e os ícones dele (lidos de `C:\Program Files (x86)\Akko`). Sem ele, a janela funciona com fontes e ícones próprios.
+> Se o app da Akko estiver instalado na hora da instalação, o Echo Ultra copia dele as fotos do mouse, os ícones e as fontes. Sem ele, a janela usa um desenho próprio do mouse, ícones próprios e a fonte Segoe UI do Windows. Os arquivos da Akko não fazem parte deste repositório.
 
 ## Compilar
 

@@ -3,8 +3,8 @@
 1 ICON "app.ico"
 
 VS_VERSION_INFO VERSIONINFO
-FILEVERSION 1,2,1,0
-PRODUCTVERSION 1,2,1,0
+FILEVERSION 1,2,2,0
+PRODUCTVERSION 1,2,2,0
 FILEOS VOS_NT_WINDOWS32
 FILETYPE VFT_APP
 BEGIN
@@ -14,11 +14,11 @@ BEGIN
     BEGIN
       VALUE "CompanyName", "github.com/atnelop/akko-echo-ultra"
       VALUE "FileDescription", "Akko Echo Ultra"
-      VALUE "FileVersion", "1.2.1"
+      VALUE "FileVersion", "1.2.2"
       VALUE "InternalName", "AkkoEchoUltra"
       VALUE "OriginalFilename", "AkkoEchoUltra.exe"
       VALUE "ProductName", "Akko Echo Ultra"
-      VALUE "ProductVersion", "1.2.1"
+      VALUE "ProductVersion", "1.2.2"
     END
   END
   BLOCK "VarFileInfo"
