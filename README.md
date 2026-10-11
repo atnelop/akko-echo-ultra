@@ -11,6 +11,7 @@ Programa próprio (Rust, nativo do Windows) para configurar o mouse **Akko TAN8 
   - Debounce, suspensão e LOD (0,7/1/2 mm).
   - Angle Snapping, Motion Sync e Ripple Control.
 - **Troca rápida de DPI:** esquerdo + meio + direito juntos trocam o estágio na hora, com um aviso no canto da tela mostrando o DPI.
+- **Games:** DPI por jogo. Com um jogo da lista em primeiro plano, o estágio de DPI dele é ativado sozinho; ao sair do jogo, volta ao DPI anterior.
 - **Macro:** grava sequências de teclas, com os tempos, e coloca o macro num botão. O mouse guarda um macro por vez.
 - **Bandeja:** ícone com a porcentagem da bateria. Iniciar com o Windows, minimizado.
 - **Idioma:** inglês e português.

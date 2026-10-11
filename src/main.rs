@@ -7,6 +7,7 @@
 #![windows_subsystem = "windows"]
 
 mod autostart;
+mod games;
 mod i18n;
 mod keys;
 mod mouse;

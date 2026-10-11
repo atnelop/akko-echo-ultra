@@ -29,6 +29,21 @@ pub struct Prefs {
     pub macros: Vec<Macro>,
     /// Nome do macro que está gravado no mouse agora.
     pub macro_no_mouse: Option<String>,
+    /// DPI por jogo: com o jogo em primeiro plano, ativa o estágio dele.
+    pub jogos: Vec<RegraJogo>,
+    /// Ao sair do jogo, volta ao estágio que estava antes.
+    pub jogo_voltar: bool,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Default)]
+#[serde(default)]
+pub struct RegraJogo {
+    /// executável, em minúsculas (ex.: "cs2.exe")
+    pub exe: String,
+    /// título da janela quando foi adicionado (só para mostrar)
+    pub nome: String,
+    /// estágio de DPI (0..3)
+    pub estagio: usize,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Default)]
@@ -64,6 +79,8 @@ impl Default for Prefs {
             estagios_salvos: Vec::new(),
             macros: Vec::new(),
             macro_no_mouse: None,
+            jogos: Vec::new(),
+            jogo_voltar: true,
         }
     }
 }

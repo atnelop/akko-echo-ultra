@@ -10,7 +10,8 @@ use eframe::egui::{self, Align2, Color32, FontFamily, FontId, Pos2, Rect, Roundi
 use crate::i18n::{self, t};
 use crate::keys;
 use crate::mouse::{BUTTONS, DEBOUNCE_LABELS, DEFAULT_BUTTONS, MACRO_CODE, MACRO_MAX_EVENTS, POLLING_HZ};
-use crate::state::{data_dir, Comando, Estado, EventoMacro, Macro, Prefs};
+use crate::games;
+use crate::state::{data_dir, Comando, Estado, EventoMacro, Macro, Prefs, RegraJogo};
 use crate::tray;
 
 const W: f32 = 1180.0;
@@ -134,6 +135,7 @@ enum Page {
     Buttons,
     Performance,
     Macro,
+    Games,
     Settings,
     About,
 }
@@ -169,6 +171,9 @@ struct App {
     panel_scroll: f32,
     panel_height: f32,
     macro_dropdown: bool,
+    /// Lista de programas abertos para escolher um jogo (aberta pelo "Adicionar jogo").
+    game_picker: Option<Vec<(String, String)>>,
+    game_exe_text: String,
     key_capture: Option<(usize, [bool; 256])>,
     macro_sel: Option<usize>,
     macro_name: String,
@@ -286,6 +291,16 @@ fn icon_macro(ui: &egui::Ui, c: Pos2) {
     ui.painter().text(c + Vec2::new(0.0, 1.0), Align2::CENTER_CENTER, "\u{261d}", FontId::proportional(18.0), TEXT);
 }
 
+fn icon_gamepad(ui: &egui::Ui, c: Pos2) {
+    let pa = ui.painter();
+    let st = Stroke::new(1.4_f32, TEXT);
+    pa.rect_stroke(Rect::from_center_size(c, Vec2::new(20.0, 12.0)), Rounding::same(6.0), st);
+    pa.line_segment([c + Vec2::new(-7.5, 0.0), c + Vec2::new(-2.5, 0.0)], st);
+    pa.line_segment([c + Vec2::new(-5.0, -2.5), c + Vec2::new(-5.0, 2.5)], st);
+    pa.circle_filled(c + Vec2::new(4.0, -1.5), 1.2, TEXT);
+    pa.circle_filled(c + Vec2::new(6.5, 1.5), 1.2, TEXT);
+}
+
 fn icon_gear(ui: &egui::Ui, c: Pos2) {
     let pa = ui.painter();
     pa.circle_stroke(c, 6.0, Stroke::new(1.4_f32, TEXT));
@@ -369,11 +384,11 @@ impl App {
             photo,
             mouse_top: load_png(&skin.join(r"ms\M0019\mousea@150.png"))
                 .map(|img| cc.egui_ctx.load_texture("mouse_top", img, egui::TextureOptions::LINEAR)),
-            tab_imgs: ["key", "dpi", "marco", "", "about"]
+            tab_imgs: ["key", "dpi", "marco", "", "", "about"]
                 .iter()
                 .map(|name| {
                     if name.is_empty() {
-                        return None; // "Configurações" não existe no Akko: ícone desenhado
+                        return None; // "Games" e "Settings" não existem no Akko: ícone desenhado
                     }
                     let img = |kind: &str| {
                         load_png(&skin.join(format!(r"control\{name}_{kind}@150.png")))
@@ -387,6 +402,8 @@ impl App {
             panel_scroll: 0.0,
             panel_height: 0.0,
             macro_dropdown: false,
+            game_picker: None,
+            game_exe_text: String::new(),
             key_capture: None,
             macro_sel: None,
             macro_name: String::new(),
@@ -598,6 +615,7 @@ impl App {
             (Page::Buttons, t("button_assignment")),
             (Page::Performance, t("performance")),
             (Page::Macro, t("macro")),
+            (Page::Games, t("games")),
             (Page::Settings, t("settings")),
             (Page::About, t("about")),
         ];
@@ -624,6 +642,7 @@ impl App {
                 match page {
                     Page::Buttons => icon_mouse(ui, c),
                     Page::Macro => icon_macro(ui, c),
+                    Page::Games => icon_gamepad(ui, c),
                     Page::Performance => icon_pulse(ui, c),
                     Page::Settings => icon_gear(ui, c),
                     Page::About => icon_info(ui, c),
@@ -1237,6 +1256,134 @@ impl App {
         }
     }
 
+    /* ---------------- Games (DPI por jogo) ---------------- */
+
+    fn page_games(&mut self, ui: &mut egui::Ui, ctx: &egui::Context) {
+        label(ui, 301.0, 127.0, t("games"), 19.0, true, TEXT);
+        let Some(e) = self.est.clone() else {
+            self.status(ui);
+            return;
+        };
+        wrapped(ui, 301.0, 145.0, 820.0, t("games_hint"), 12.0, SOFT);
+
+        label(ui, 301.0, 197.0, t("game_return"), 15.0, true, TEXT);
+        if let Some(on) = on_off(ui, 301.0, 214.0, e.prefs.jogo_voltar) {
+            self.send_prefs(|p| p.jogo_voltar = on);
+        }
+
+        // Lista de jogos: executável, título e o estágio de DPI (chips como na Performance)
+        let mut y = 272.0;
+        if e.prefs.jogos.is_empty() {
+            label(ui, 301.0, y + 18.0, t("no_games"), 13.0, false, MUTED);
+            y += 44.0;
+        }
+        let mut remove: Option<usize> = None;
+        let mut set_stage: Option<(usize, usize)> = None;
+        for (k, j) in e.prefs.jogos.iter().enumerate() {
+            if y > 640.0 {
+                break;
+            }
+            let row = r(301.0, y, 1150.0, y + 48.0);
+            ui.painter().rect_filled(row, Rounding::same(10.0), CARD);
+            label(ui, 318.0, y + 17.0, &j.exe, 14.0, true, TEXT);
+            let title: String = j.nome.chars().take(38).collect();
+            label(ui, 318.0, y + 34.0, &title, 11.0, false, MUTED);
+            for (i, st) in e.estagios.iter().enumerate() {
+                let x = 640.0 + i as f32 * 92.0;
+                let chip = r(x, y + 9.0, x + 80.0, y + 39.0);
+                let resp = ui.interact(chip, ui.id().with(("game_chip", k, i)), Sense::click());
+                let sel = j.estagio == i;
+                ui.painter().rect_filled(chip, Rounding::same(6.0), if resp.hovered() { PILL } else { BG });
+                if sel {
+                    ui.painter().rect_stroke(chip, Rounding::same(6.0), Stroke::new(1.0_f32, color32(st.cor)));
+                }
+                ui.painter().rect_filled(Rect::from_center_size(p(x + 15.0, y + 24.0), Vec2::splat(12.0)), Rounding::same(2.0), color32(st.cor));
+                label(ui, x + 27.0, y + 24.0, &st.dpi.to_string(), 14.0, false, if sel { TEXT } else { SOFT });
+                if resp.clicked() && !sel {
+                    set_stage = Some((k, i));
+                }
+            }
+            let del = Rect::from_center_size(p(1126.0, y + 24.0), Vec2::splat(26.0));
+            let dr = ui.interact(del, ui.id().with(("game_del", k)), Sense::click()).on_hover_text(t("delete"));
+            if dr.hovered() {
+                ui.painter().rect_filled(del, Rounding::same(5.0), PILL_HOVER);
+            }
+            let s = Stroke::new(1.5_f32, SOFT);
+            ui.painter().line_segment([del.center() + Vec2::new(-5.0, -5.0), del.center() + Vec2::new(5.0, 5.0)], s);
+            ui.painter().line_segment([del.center() + Vec2::new(5.0, -5.0), del.center() + Vec2::new(-5.0, 5.0)], s);
+            if dr.clicked() {
+                remove = Some(k);
+            }
+            y += 56.0;
+        }
+        if let Some((k, i)) = set_stage {
+            self.send_prefs(|p| p.jogos[k].estagio = i);
+        }
+        if let Some(k) = remove {
+            self.send_prefs(|p| {
+                p.jogos.remove(k);
+            });
+        }
+
+        // Adicionar jogo: escolher entre os programas abertos ou digitar o executável
+        let add = r(301.0, y + 6.0, 461.0, y + 36.0);
+        if pill(ui, add, t("add_game"), self.game_picker.is_some()).clicked() {
+            self.game_picker = if self.game_picker.is_some() { None } else { Some(games::window_apps()) };
+            self.popup_just_opened = true;
+        }
+        self.game_picker_ui(ctx, &e, p(301.0, (y + 42.0).min(H - 330.0)));
+    }
+
+    fn game_picker_ui(&mut self, ctx: &egui::Context, e: &Estado, pos: Pos2) {
+        let Some(apps) = self.game_picker.clone() else { return };
+        let mut add: Option<(String, String)> = None;
+        let area = egui::Area::new(egui::Id::new("game_picker")).order(egui::Order::Foreground).fixed_pos(pos).show(ctx, |ui| {
+            egui::Frame::popup(ui.style()).fill(Color32::from_rgb(0x2a, 0x2a, 0x2a)).show(ui, |ui| {
+                ui.set_width(460.0);
+                ui.label(egui::RichText::new(t("pick_game")).size(12.0).color(SOFT));
+                ui.add_space(4.0);
+                egui::ScrollArea::vertical().max_height(220.0).show(ui, |ui| {
+                    for (exe, title) in &apps {
+                        let known = e.prefs.jogos.iter().any(|j| &j.exe == exe);
+                        let (rect, resp) = ui.allocate_exact_size(Vec2::new(ui.available_width(), 34.0), Sense::click());
+                        if resp.hovered() && !known {
+                            ui.painter().rect_filled(rect, Rounding::same(5.0), PILL_HOVER);
+                        }
+                        let c = if known { MUTED } else { TEXT };
+                        ui.painter().text(rect.left_center() + Vec2::new(10.0, -7.0), Align2::LEFT_CENTER, exe, font(13.0, true), c);
+                        let short: String = title.chars().take(60).collect();
+                        ui.painter().text(rect.left_center() + Vec2::new(10.0, 8.0), Align2::LEFT_CENTER, short, font(11.0, false), MUTED);
+                        if resp.clicked() && !known {
+                            add = Some((exe.clone(), title.clone()));
+                        }
+                    }
+                });
+                ui.add_space(6.0);
+                ui.horizontal(|ui| {
+                    ui.label(egui::RichText::new(t("type_exe")).size(12.0).color(SOFT));
+                    let te = ui.add(egui::TextEdit::singleline(&mut self.game_exe_text).hint_text("game.exe").desired_width(200.0));
+                    let go = ui.button(t("add")).clicked() || te.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter));
+                    let exe = self.game_exe_text.trim().to_lowercase();
+                    if go && !exe.is_empty() {
+                        let exe = if exe.ends_with(".exe") { exe } else { format!("{exe}.exe") };
+                        add = Some((exe, String::new()));
+                    }
+                });
+            });
+        });
+        if let Some((exe, nome)) = add {
+            if !e.prefs.jogos.iter().any(|j| j.exe == exe) {
+                // começa no estágio ativo agora (dá para trocar nos chips)
+                let estagio = e.ativo;
+                self.send_prefs(|p| p.jogos.push(RegraJogo { exe, nome, estagio }));
+            }
+            self.game_picker = None;
+            self.game_exe_text.clear();
+            return;
+        }
+        self.close_on_click_outside(ctx, area.response.rect, |s| s.game_picker = None);
+    }
+
     /* ---------------- Macro ---------------- */
 
     fn page_macro(&mut self, ui: &mut egui::Ui, ctx: &egui::Context) {
@@ -1472,6 +1619,7 @@ impl eframe::App for App {
             match self.page {
                 Page::Buttons => self.page_buttons(ui, ctx),
                 Page::Macro => self.page_macro(ui, ctx),
+                Page::Games => self.page_games(ui, ctx),
                 Page::Performance => self.page_performance(ui, ctx),
                 Page::Settings => self.page_settings(ui),
                 Page::About => self.page_about(ui),

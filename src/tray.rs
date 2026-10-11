@@ -20,7 +20,7 @@ use windows_sys::Win32::UI::WindowsAndMessaging::*;
 use crate::mouse::{macro_bytes, polling_code, wide_str as wide, Buttons, Device, Mem, BUTTONS, DEFAULT_BUTTONS, MACRO_CODE, STAGES};
 use crate::i18n::t;
 use crate::state::{Comando, Estado, Estagio, Prefs};
-use crate::{autostart, i18n, osd};
+use crate::{autostart, games, i18n, osd};
 
 pub const CLASS: &str = "AkkoEchoUltraBandeja";
 const WM_TRAY: u32 = WM_APP + 1;
@@ -384,6 +384,9 @@ fn device_thread(rx: Receiver<Comando>) {
     let mut ui_alive_until = Instant::now();
     let mut akko = false;
     let mut chord = false;
+    let mut last_game_check = Instant::now();
+    // Jogo em primeiro plano agora: (executável, estágio de antes do jogo).
+    let mut game: Option<(String, usize)> = None;
     publish(None, w.status, w.battery);
 
     loop {
@@ -484,6 +487,35 @@ fn device_thread(rx: Receiver<Comando>) {
             }
         }
         chord = down;
+
+        // DPI por jogo: com um jogo da lista em primeiro plano, ativa o estágio dele; ao sair dele
+        // (fechar ou Alt+Tab), volta ao estágio de antes. Só consulta o Windows, não o mouse.
+        if now - last_game_check >= Duration::from_secs(1) {
+            last_game_check = now;
+            let p = prefs();
+            let rule = games::foreground_exe().and_then(|exe| p.jogos.iter().find(|j| j.exe == exe).cloned());
+            match (rule, game.clone()) {
+                (Some(r), cur) if cur.as_ref().map_or(true, |(e, _)| *e != r.exe) => {
+                    if let Some(active) = w.mem.as_ref().map(|m| m.active()) {
+                        let target = r.estagio.min(STAGES - 1);
+                        let prev = cur.map_or(active, |(_, p)| p);
+                        crate::log(&format!("jogo em primeiro plano: {} -> estagio {}", r.exe, target + 1));
+                        if active != target {
+                            w.activate(target);
+                        }
+                        game = Some((r.exe, prev));
+                    }
+                }
+                (None, Some((exe, prev))) => {
+                    crate::log(&format!("saiu do jogo {exe}"));
+                    if p.jogo_voltar && w.mem.as_ref().map_or(false, |m| m.active() != prev) {
+                        w.activate(prev);
+                    }
+                    game = None;
+                }
+                _ => {}
+            }
+        }
 
         // Bateria: a cada 5 min, ou a cada minuto com a janela de configuração aberta. Enquanto
         // não houver leitura (ex.: logo depois de ligar o PC, com o mouse ainda acordando), tenta
@@ -907,6 +939,10 @@ pub fn run(open_ui: bool) {
 
 /// Envia um comando para a bandeja (usado pela janela de configuração).
 pub fn send(c: &Comando) -> bool {
+    // A prévia (AKKO_ECHO_PREVIEW, dados de exemplo) nunca manda nada para a bandeja de verdade.
+    if std::env::var_os("AKKO_ECHO_PREVIEW").is_some() {
+        return false;
+    }
     let Some(h) = find_existing() else { return false };
     let json = serde_json::to_vec(c).unwrap_or_default();
     let cds = COPYDATASTRUCT { dwData: 1, cbData: json.len() as u32, lpData: json.as_ptr() as *mut _ };

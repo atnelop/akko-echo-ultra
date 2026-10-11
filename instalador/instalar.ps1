@@ -1,5 +1,5 @@
-# Instala o Akko Echo Ultra em C:\Program Files\Akko Echo Ultra (precisa de administrador) e
-# devolve o app da Akko ao original (remove as modificações feitas nele antes deste programa).
+﻿# Instala o Akko Echo Ultra em C:\Program Files\Akko Echo Ultra (precisa de administrador) e
+# devolve o app da Akko ao original (remove as modificaÃ§Ãµes feitas nele antes deste programa).
 $ErrorActionPreference = 'Stop'
 $src = Split-Path $PSScriptRoot -Parent          # pasta do projeto
 $dir = 'C:\Program Files\Akko Echo Ultra'
@@ -10,7 +10,7 @@ Get-Process AkkoEchoUltra -ErrorAction SilentlyContinue | Stop-Process -Force
 Start-Sleep 1
 New-Item -ItemType Directory -Force $dir, "$dir\codigo-fonte" | Out-Null
 
-# O .exe vem da compilação (target\release) ou, no zip da página de Releases do GitHub, fica
+# O .exe vem da compilaÃ§Ã£o (target\release) ou, no zip da pÃ¡gina de Releases do GitHub, fica
 # ao lado da pasta "instalador".
 $exe = @("$src\target\release\AkkoEchoUltra.exe", "$src\AkkoEchoUltra.exe") | Where-Object { Test-Path $_ } | Select-Object -First 1
 if (-not $exe) { throw 'AkkoEchoUltra.exe nao encontrado (compile com: cargo build --release)' }
@@ -23,13 +23,13 @@ foreach ($item in 'src', 'assets', 'tools', 'instalador', '.cargo', 'mingw-libs'
 }
 $rel.Add("programa copiado para $dir")
 
-# Atalho no menu Iniciar (para todos os usuários)
+# Atalho no menu Iniciar (para todos os usuÃ¡rios)
 $sh = New-Object -ComObject WScript.Shell
 $lnk = $sh.CreateShortcut('C:\ProgramData\Microsoft\Windows\Start Menu\Programs\Akko Echo Ultra.lnk')
 $lnk.TargetPath = "$dir\AkkoEchoUltra.exe"
 $lnk.WorkingDirectory = $dir
 $lnk.IconLocation = "$dir\AkkoEchoUltra.exe,0"
-$lnk.Description = 'Configuração do mouse Akko TAN8 Ultra'
+$lnk.Description = 'ConfiguraÃ§Ã£o do mouse Akko TAN8 Ultra'
 $lnk.Save()
 $rel.Add('atalho criado no menu Iniciar')
 
@@ -38,7 +38,7 @@ $key = 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\AkkoEchoUltra'
 New-Item $key -Force | Out-Null
 $size = [int]((Get-ChildItem $dir -Recurse -File | Measure-Object Length -Sum).Sum / 1KB)
 $values = @{
-    DisplayName = 'Akko Echo Ultra'; DisplayVersion = '1.1.1'; Publisher = 'Akko Echo Ultra (projeto pessoal)'
+    DisplayName = 'Akko Echo Ultra'; DisplayVersion = '1.2.0'; Publisher = 'Akko Echo Ultra (projeto pessoal)'
     DisplayIcon = "$dir\AkkoEchoUltra.exe,0"; InstallLocation = $dir
     UninstallString = "powershell.exe -NoProfile -ExecutionPolicy Bypass -File `"$dir\desinstalar.ps1`""
 }
