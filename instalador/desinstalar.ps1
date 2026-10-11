@@ -1,4 +1,4 @@
-# Desinstala o Akko Echo Ultra (chamado por "Aplicativos instalados" do Windows).
+﻿# Desinstala o Akko Echo Ultra (chamado por "Aplicativos instalados" do Windows).
 $ErrorActionPreference = 'SilentlyContinue'
 $principal = New-Object Security.Principal.WindowsPrincipal([Security.Principal.WindowsIdentity]::GetCurrent())
 if (-not $principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) {

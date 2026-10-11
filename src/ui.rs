@@ -192,9 +192,19 @@ fn font(size: f32, bold: bool) -> FontId {
     }
 }
 
+/// Pasta com as imagens e fontes do app da Akko: a cópia instalada junto com este programa
+/// ("akko" ao lado do .exe, feita pelo instalador) ou, se não houver, o app da Akko instalado.
+fn akko_dir() -> std::path::PathBuf {
+    let own = std::env::current_exe().ok().and_then(|e| e.parent().map(|d| d.join("akko")));
+    match own {
+        Some(d) if d.join("Skin").is_dir() => d,
+        _ => std::path::PathBuf::from(r"C:\Program Files (x86)\Akko"),
+    }
+}
+
 fn setup_fonts(ctx: &egui::Context) {
     let mut fonts = egui::FontDefinitions::default();
-    let dir = std::path::Path::new(r"C:\Program Files (x86)\Akko\Font");
+    let dir = akko_dir().join("Font");
     if let Ok(b) = std::fs::read(dir.join("MiSans-Normal.ttf")) {
         fonts.font_data.insert("misans".into(), egui::FontData::from_owned(b));
         fonts.families.get_mut(&FontFamily::Proportional).unwrap().insert(0, "misans".into());
@@ -360,7 +370,7 @@ impl App {
         if let Some(e) = &est {
             i18n::set_lang(&e.prefs.idioma);
         }
-        let skin = std::path::Path::new(r"C:\Program Files (x86)\Akko\Skin");
+        let skin = akko_dir().join("Skin");
         let photo = [skin.join(r"About\M0019_mouse@150.png"), skin.join(r"ms\M0019\mouse@150.png")]
             .iter()
             .find_map(|f| load_png(f))

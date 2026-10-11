@@ -1,5 +1,5 @@
 ﻿# Instala o Akko Echo Ultra em C:\Program Files\Akko Echo Ultra (precisa de administrador) e
-# devolve o app da Akko ao original (remove as modificaÃ§Ãµes feitas nele antes deste programa).
+# devolve o app da Akko ao original (remove as modificações feitas nele antes deste programa).
 $ErrorActionPreference = 'Stop'
 $src = Split-Path $PSScriptRoot -Parent          # pasta do projeto
 $dir = 'C:\Program Files\Akko Echo Ultra'
@@ -10,7 +10,7 @@ Get-Process AkkoEchoUltra -ErrorAction SilentlyContinue | Stop-Process -Force
 Start-Sleep 1
 New-Item -ItemType Directory -Force $dir, "$dir\codigo-fonte" | Out-Null
 
-# O .exe vem da compilaÃ§Ã£o (target\release) ou, no zip da pÃ¡gina de Releases do GitHub, fica
+# O .exe vem da compilação (target\release) ou, no zip da página de Releases do GitHub, fica
 # ao lado da pasta "instalador".
 $exe = @("$src\target\release\AkkoEchoUltra.exe", "$src\AkkoEchoUltra.exe") | Where-Object { Test-Path $_ } | Select-Object -First 1
 if (-not $exe) { throw 'AkkoEchoUltra.exe nao encontrado (compile com: cargo build --release)' }
@@ -23,13 +23,43 @@ foreach ($item in 'src', 'assets', 'tools', 'instalador', '.cargo', 'mingw-libs'
 }
 $rel.Add("programa copiado para $dir")
 
-# Atalho no menu Iniciar (para todos os usuÃ¡rios)
+# Imagens e fontes do app da Akko que a janela usa, copiadas para "akko" ao lado do programa
+# (assim a janela não depende do app da Akko instalado). Vêm do app da Akko, se instalado, ou do
+# backup da instalação original. Não fazem parte do repositório.
+$assets = @('Font\MiSans-Normal.ttf', 'Font\MiSans-Semibold.ttf', 'Skin\About\M0019_mouse@150.png', 'Skin\ms\M0019\mousea@150.png')
+foreach ($k in 'key', 'dpi', 'marco', 'about') { foreach ($t in 'normal', 'hot') { $assets += "Skin\Control\${k}_${t}@150.png" } }
+$zipPath = "$dir\backup-akko\instalacao_ProgramFiles_Akko.zip"
+$zip = $null
+$copied = 0
+foreach ($a in $assets) {
+    $dst = "$dir\akko\$a"
+    if (Test-Path $dst) { continue }
+    New-Item -ItemType Directory -Force (Split-Path $dst) | Out-Null
+    if (Test-Path "$akko\$a") {
+        Copy-Item "$akko\$a" $dst
+        $copied++
+    } elseif (Test-Path $zipPath) {
+        if (-not $zip) {
+            Add-Type -AssemblyName System.IO.Compression.FileSystem
+            $zip = [IO.Compression.ZipFile]::OpenRead($zipPath)
+        }
+        $entry = $zip.Entries | Where-Object { $_.FullName -ieq $a } | Select-Object -First 1
+        if ($entry) {
+            [IO.Compression.ZipFileExtensions]::ExtractToFile($entry, $dst, $true)
+            $copied++
+        }
+    }
+}
+if ($zip) { $zip.Dispose() }
+if ($copied) { $rel.Add("imagens e fontes da Akko copiadas para $dir\akko ($copied arquivos)") }
+
+# Atalho no menu Iniciar (para todos os usuários)
 $sh = New-Object -ComObject WScript.Shell
 $lnk = $sh.CreateShortcut('C:\ProgramData\Microsoft\Windows\Start Menu\Programs\Akko Echo Ultra.lnk')
 $lnk.TargetPath = "$dir\AkkoEchoUltra.exe"
 $lnk.WorkingDirectory = $dir
 $lnk.IconLocation = "$dir\AkkoEchoUltra.exe,0"
-$lnk.Description = 'ConfiguraÃ§Ã£o do mouse Akko TAN8 Ultra'
+$lnk.Description = 'Configuração do mouse Akko TAN8 Ultra'
 $lnk.Save()
 $rel.Add('atalho criado no menu Iniciar')
 
@@ -38,7 +68,7 @@ $key = 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\AkkoEchoUltra'
 New-Item $key -Force | Out-Null
 $size = [int]((Get-ChildItem $dir -Recurse -File | Measure-Object Length -Sum).Sum / 1KB)
 $values = @{
-    DisplayName = 'Akko Echo Ultra'; DisplayVersion = '1.2.0'; Publisher = 'Akko Echo Ultra (projeto pessoal)'
+    DisplayName = 'Akko Echo Ultra'; DisplayVersion = '1.2.1'; Publisher = 'Akko Echo Ultra (projeto pessoal)'
     DisplayIcon = "$dir\AkkoEchoUltra.exe,0"; InstallLocation = $dir
     UninstallString = "powershell.exe -NoProfile -ExecutionPolicy Bypass -File `"$dir\desinstalar.ps1`""
 }

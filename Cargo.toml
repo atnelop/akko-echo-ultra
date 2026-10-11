@@ -1,8 +1,8 @@
-﻿[package]
+[package]
 name = "akko-echo-ultra"
-version = "1.2.0"
+version = "1.2.1"
 edition = "2021"
-description = "Akko Echo Ultra - configuraÃ§Ã£o do mouse Akko TAN8 Ultra"
+description = "Akko Echo Ultra - configuração do mouse Akko TAN8 Ultra"
 
 [[bin]]
 name = "AkkoEchoUltra"

@@ -1,4 +1,4 @@
-# Gera assets\app.ico (256, 48, 32 e 16 px): quadrado roxo arredondado com um mouse branco,
+﻿# Gera assets\app.ico (256, 48, 32 e 16 px): quadrado roxo arredondado com um mouse branco,
 # o mesmo desenho do ícone da janela (ui::app_icon_rgba).
 Add-Type -AssemblyName System.Drawing
 $out = Join-Path $PSScriptRoot '..\assets'
