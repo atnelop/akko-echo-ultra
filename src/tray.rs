@@ -197,23 +197,13 @@ impl Worker {
         }
     }
 
-    /// Ativa um estágio (e o polling configurado para ele). Mostra o aviso.
+    /// Ativa um estágio (o polling é o mesmo para todos, como no app da Akko). Mostra o aviso.
     fn activate(&mut self, i: usize) {
         let Some(old) = self.mem.clone() else { return };
         let p = prefs();
-        let hz = match polling_code(p.polling_por_estagio[i]) {
-            Some(_) => p.polling_por_estagio[i],
-            None => old.polling_hz(),
-        };
-        let ok = self.change(|m, p| {
-            m.set_active(i);
-            if let Some(code) = polling_code(p.polling_por_estagio[i]) {
-                m.set_polling(code);
-            }
-        });
-        // Entrando em 8000 Hz o receptor pode parar de responder no meio da gravação, mas o
-        // estágio já foi gravado antes (ver Device::apply): o aviso aparece do mesmo jeito.
-        if (ok || hz == 8000) && p.aviso {
+        let hz = old.polling_hz();
+        let ok = self.change(|m, _| m.set_active(i));
+        if ok && p.aviso {
             let txt = t("stage_of").replacen("{}", &(i + 1).to_string(), 1).replacen("{}", &STAGES.to_string(), 1);
             osd::show(format!("{} DPI", old.dpi(i)), format!("{txt} \u{b7} {hz} Hz"), old.color(i), p.aviso_ms);
         }
@@ -228,15 +218,10 @@ impl Worker {
             Comando::Cor { i, rgb } if i < STAGES => {
                 self.change(|m, _| m.set_color(i, rgb));
             }
-            Comando::PollingEstagio { i, hz } if i < STAGES => {
-                update_prefs(|p| p.polling_por_estagio[i] = hz);
-                // Se é o estágio ativo, o polling muda agora.
-                if self.mem.as_ref().map_or(false, |m| m.active() == i) {
-                    if let Some(code) = polling_code(hz) {
-                        self.change(|m, _| m.set_polling(code));
-                    }
+            Comando::Polling { hz } => {
+                if let Some(code) = polling_code(hz) {
+                    self.change(|m, _| m.set_polling(code));
                 }
-                publish(self.mem.as_ref(), self.status, self.battery);
             }
             Comando::Lod { v } if v <= 2 => {
                 self.change(|m, _| m.set_lod(v));
@@ -360,6 +345,19 @@ fn default_light(m: &mut Mem) {
     m.set_light_rgb([0xff, 0xff, 0xff]);
 }
 
+/// Bytes de função desconhecida que vêm de fábrica com valor e se perderam numa corrupção da
+/// memória (0x64 = 0x1e no backup original de 2026-10-10; virou 0x00). Devolve o de fábrica.
+fn restore_factory_bytes(w: &mut Worker) {
+    const FACTORY: [(usize, u8); 1] = [(0x64, 0x1e)];
+    let Some(m) = &w.mem else { return };
+    let lost: Vec<(usize, u8)> = FACTORY.iter().copied().filter(|&(a, _)| m.0[a] == 0).collect();
+    if lost.is_empty() {
+        return;
+    }
+    crate::log(&format!("restaurando bytes de fabrica: {lost:02x?}"));
+    w.change(|m, _| lost.iter().for_each(|&(a, v)| m.set_byte(a, v)));
+}
+
 /// Se o firmware zerou algum estágio (acontece ao entrar em 8000 Hz), devolve os últimos bons.
 fn restore_stages(w: &mut Worker) {
     let saved = prefs().estagios_salvos;
@@ -459,6 +457,7 @@ fn device_thread(rx: Receiver<Comando>) {
                     // Os testes de iluminação (removidos) mexiam na luz: garante a luz padrão
                     // (não grava nada se já estiver assim).
                     restore_light(&mut w);
+                    restore_factory_bytes(&mut w);
                 }
                 _ => {
                     fails += 1;
@@ -486,8 +485,16 @@ fn device_thread(rx: Receiver<Comando>) {
         }
         chord = down;
 
-        // Bateria: a cada 5 min, ou a cada minuto com a janela de configuração aberta.
-        let period = if now < ui_alive_until { 60 } else { 300 };
+        // Bateria: a cada 5 min, ou a cada minuto com a janela de configuração aberta. Enquanto
+        // não houver leitura (ex.: logo depois de ligar o PC, com o mouse ainda acordando), tenta
+        // de novo a cada 10 s.
+        let period = if w.battery < 0 {
+            10
+        } else if now < ui_alive_until {
+            60
+        } else {
+            300
+        };
         if last_battery.map_or(true, |t| now - t >= Duration::from_secs(period)) {
             last_battery = Some(now);
             if let Some(d) = &w.dev {
@@ -498,7 +505,7 @@ fn device_thread(rx: Receiver<Comando>) {
                             publish(w.mem.as_ref(), w.status, w.battery);
                         }
                     }
-                    Err(_) => {}
+                    Err(e) => dbg(&format!("bateria: sem resposta ({e:?})")),
                 }
             }
         }

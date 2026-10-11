@@ -9,7 +9,7 @@ use eframe::egui::{self, Align2, Color32, FontFamily, FontId, Pos2, Rect, Roundi
 
 use crate::i18n::{self, t};
 use crate::keys;
-use crate::mouse::{polling_code, BUTTONS, DEBOUNCE_LABELS, DEFAULT_BUTTONS, MACRO_CODE, MACRO_MAX_EVENTS, POLLING_HZ};
+use crate::mouse::{BUTTONS, DEBOUNCE_LABELS, DEFAULT_BUTTONS, MACRO_CODE, MACRO_MAX_EVENTS, POLLING_HZ};
 use crate::state::{data_dir, Comando, Estado, EventoMacro, Macro, Prefs};
 use crate::tray;
 
@@ -774,20 +774,16 @@ impl App {
             ctx.set_cursor_icon(egui::CursorIcon::PointingHand);
         }
 
-        // Polling do estágio ativo
-        let pr = label(ui, 301.0, 371.0, t("polling_rate"), 17.0, true, TEXT);
-        label(ui, pr.right() + 14.0, 372.0, t("polling_hint"), 12.0, false, MUTED);
-        let cur_hz = match e.prefs.polling_por_estagio.get(sel).copied() {
-            Some(hz) if polling_code(hz).is_some() => hz,
-            _ => e.polling_hz,
-        };
+        // Polling (o mesmo para todos os estágios, como no app da Akko)
+        label(ui, 301.0, 371.0, t("polling_rate"), 17.0, true, TEXT);
+        let cur_hz = e.polling_hz;
         let labels: Vec<String> = POLLING_HZ.iter().map(|h| format!("{h} HZ")).collect();
         let idx = POLLING_HZ.iter().position(|&h| h == cur_hz).unwrap_or(3);
         if let Some(i) = self.ticked_slider(ui, "polling", 394.0, &labels, idx) {
             let hz = POLLING_HZ[i];
-            tray::send(&Comando::PollingEstagio { i: sel, hz });
+            tray::send(&Comando::Polling { hz });
             if let Some(est) = &mut self.est {
-                est.prefs.polling_por_estagio[sel] = hz;
+                est.polling_hz = hz;
             }
         }
         if cur_hz == 8000 {

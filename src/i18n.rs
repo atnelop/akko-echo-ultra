@@ -118,7 +118,6 @@ const TEXTS: &[(&str, &str, &str)] = &[
     ("dpi_value", "DPI Value", "Valor de DPI"),
     ("dpi_hint", "Click a stage to activate it. Click its color square to change the LED color.", "Clique num estágio para ativá-lo. Clique no quadrado de cor para mudar a cor do LED."),
     ("polling_rate", "Polling Rate", "Taxa de Polling"),
-    ("polling_hint", "Saved per DPI stage: applied whenever this stage is activated.", "Salva por estágio de DPI: aplicada sempre que este estágio é ativado."),
     ("debounce", "Debounce Delay", "Atraso de Debounce"),
     ("debounce_hint", "125µs debounce works only at 8000Hz polling. Using a low debounce may cause accidental double-clicks.", "Debounce de 125µs só funciona com polling de 8000Hz. Debounce baixo pode causar cliques duplos acidentais."),
     ("sleep", "Sleep Setting", "Suspensão"),

@@ -16,8 +16,6 @@ pub fn data_dir() -> PathBuf {
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
 #[serde(default)]
 pub struct Prefs {
-    /// Polling de cada estágio, em Hz (0 = não muda ao trocar para ele).
-    pub polling_por_estagio: [u32; 4],
     /// Troca de DPI ao pressionar esquerdo + meio + direito juntos.
     pub troca_dpi: bool,
     /// Aviso na tela ao trocar de DPI.
@@ -59,7 +57,6 @@ impl Macro {
 impl Default for Prefs {
     fn default() -> Self {
         Prefs {
-            polling_por_estagio: [4000, 1000, 1000, 1000],
             troca_dpi: true,
             aviso: true,
             aviso_ms: 1500,
@@ -77,11 +74,6 @@ impl Prefs {
             .ok()
             .and_then(|s| serde_json::from_str(&s).ok())
             .unwrap_or_default();
-        for hz in p.polling_por_estagio.iter_mut() {
-            if *hz != 0 && crate::mouse::polling_code(*hz).is_none() {
-                *hz = 1000;
-            }
-        }
         if p.idioma != "pt" {
             p.idioma = "en".into();
         }
@@ -140,7 +132,8 @@ pub enum Comando {
     Ativar { i: usize },
     Dpi { i: usize, dpi: u16 },
     Cor { i: usize, rgb: [u8; 3] },
-    PollingEstagio { i: usize, hz: u32 },
+    /// Polling (o mesmo para todos os estágios), em Hz.
+    Polling { hz: u32 },
     Lod { v: u8 },
     Debounce { v: u8 },
     Suspensao { s: u16 },
