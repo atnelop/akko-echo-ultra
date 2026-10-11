@@ -7,7 +7,7 @@ Programa próprio (Rust, nativo do Windows) para configurar o mouse **Akko TAN8 
 - **Button Assignment:** função de cada botão. Opções: botões do mouse, DPI+/DPI-/ciclo, teclas e atalhos (Ctrl/Shift/Alt/Win), multimídia, Office, macro e desativado. Também inverte esquerdo e direito e restaura o padrão.
 - **Performance:**
   - 4 estágios de DPI com cor.
-  - Polling por estágio (125 Hz a 8 kHz).
+  - Polling por estágio (125 Hz a 8k Hz).
   - Debounce, suspensão e LOD (0,7/1/2 mm).
   - Angle Snapping, Motion Sync e Ripple Control.
 - **Troca rápida de DPI:** esquerdo + meio + direito juntos trocam o estágio na hora, com um aviso no canto da tela mostrando o DPI e o polling.
