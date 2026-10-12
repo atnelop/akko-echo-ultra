@@ -1,6 +1,6 @@
 [package]
 name = "akko-echo-ultra"
-version = "1.3.2"
+version = "1.3.3"
 edition = "2021"
 description = "Akko Echo Ultra - configuração do mouse Akko TAN8 Ultra"
 

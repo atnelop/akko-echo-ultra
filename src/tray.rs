@@ -598,6 +598,8 @@ unsafe fn battery_icon(battery: i32) -> HICON {
     const S: i32 = 32;
     let text = if battery >= 0 { battery.to_string() } else { "--".into() };
     let charging = CHARGING.load(Ordering::Relaxed);
+    // Com 100% não cabe o raio junto do número: só o mouse verde.
+    let bolt_on = charging && text.len() < 3;
     // O texto é desenhado com GDI (máscara branca sobre preto); o mouse é calculado com
     // supersampling para as bordas ficarem suaves.
     let render = |draw: &dyn Fn(HDC)| -> Vec<u8> {
@@ -623,20 +625,21 @@ unsafe fn battery_icon(battery: i32) -> HICON {
     // ponto mais alto e desce arredondado atrás; a rodinha aparece em cima, na frente.
     let top = |x: f32| -> f32 {
         let t = x / 32.0;
-        let h = if t < 0.62 {
-            0.3 + 0.7 * (std::f32::consts::FRAC_PI_2 * t / 0.62).sin()
+        // frente baixa subindo até o ponto mais alto e traseira arredondada (cabe número grande)
+        let h = if t < 0.55 {
+            0.4 + 0.6 * (std::f32::consts::FRAC_PI_2 * t / 0.55).sin()
         } else {
-            (1.0 - ((t - 0.62) / 0.38).powi(2)).max(0.0).sqrt()
+            (1.0 - ((t - 0.55) / 0.45).powi(2)).max(0.0).powf(0.35)
         };
-        31.0 - 20.0 * h
+        31.5 - 26.5 * h
     };
     let shell = |x: f32, y: f32| {
-        if !(0.0..32.0).contains(&x) || y > 31.0 || y < top(x) {
+        if !(0.0..32.0).contains(&x) || y > 31.5 || y < top(x) {
             return false;
         }
         // nariz (frente) arredondado embaixo
         let r = 5.0;
-        let (cx, cy) = (r, 31.0 - r);
+        let (cx, cy) = (r, 31.5 - r);
         if x < cx && y > cy && (x - cx).powi(2) + (y - cy).powi(2) > r * r {
             return false;
         }
@@ -647,7 +650,7 @@ unsafe fn battery_icon(battery: i32) -> HICON {
     let inside = shell;
     let wheel_mark = move |x: f32, y: f32| ((x - wx) / 2.0).powi(2) + ((y - wy) / 1.1).powi(2) <= 1.0;
     // Raio (carregando): escuro, dentro do corpo do mouse, à esquerda da porcentagem.
-    const BOLT: [(f32, f32); 7] = [(10.5, 15.5), (5.0, 23.0), (8.0, 23.0), (6.5, 29.5), (12.8, 21.0), (9.6, 21.0), (12.5, 15.5)];
+    const BOLT: [(f32, f32); 7] = [(9.8, 11.0), (2.5, 21.0), (6.5, 21.0), (4.5, 30.0), (12.5, 18.5), (8.6, 18.5), (12.0, 11.0)];
     let in_bolt = |x: f32, y: f32| {
         let mut inside = false;
         let mut j = BOLT.len() - 1;
@@ -661,7 +664,7 @@ unsafe fn battery_icon(battery: i32) -> HICON {
         }
         inside
     };
-    let detail = move |x: f32, y: f32| if charging { in_bolt(x, y) } else { wheel_mark(x, y) };
+    let detail = move |x: f32, y: f32| if bolt_on { in_bolt(x, y) } else { wheel_mark(x, y) };
     let mut body = vec![0u8; (S * S) as usize];
     let mut marks = vec![0u8; (S * S) as usize];
     const N: i32 = 4;
@@ -686,17 +689,16 @@ unsafe fn battery_icon(battery: i32) -> HICON {
     }
     let glyphs = render(&|dc| {
         let face = wide("Segoe UI");
-        let size = match (charging, text.len() >= 3) {
-            (false, false) => 18,
-            (false, true) => 13,
-            (true, false) => 15,
-            (true, true) => 11,
+        let size = match (bolt_on, text.len() >= 3) {
+            (true, _) => 20,
+            (false, false) => 24,
+            (false, true) => 17,
         };
         let f = CreateFontW(-size, 0, 0, 0, FW_BOLD as i32, 0, 0, 0, DEFAULT_CHARSET as u32, 0, 0, ANTIALIASED_QUALITY as u32, 0, face.as_ptr());
         let of = SelectObject(dc, f);
         SetBkMode(dc, TRANSPARENT as i32);
         SetTextColor(dc, 0xFFFFFF);
-        let mut r = RECT { left: if charging { 12 } else { 6 }, top: 13, right: S - 1, bottom: 31 };
+        let mut r = RECT { left: if bolt_on { 12 } else { 3 }, top: 8, right: S - 1, bottom: 31 };
         let mut w = wide(&text);
         DrawTextW(dc, w.as_mut_ptr(), (w.len() - 1) as i32, &mut r, DT_CENTER | DT_SINGLELINE | DT_VCENTER);
         SelectObject(dc, of);
