@@ -13,7 +13,7 @@ Programa próprio (Rust, nativo do Windows) para configurar o mouse **Akko TAN8 
 - **Troca rápida de DPI:** esquerdo + meio + direito juntos trocam o estágio na hora, com um aviso no canto da tela mostrando o DPI.
 - **Games:** DPI por jogo. Com um jogo da lista em primeiro plano, o estágio de DPI dele é ativado sozinho; ao sair do jogo, volta ao DPI anterior.
 - **Macro:** grava sequências de teclas, com os tempos, e coloca o macro num botão. O mouse guarda um macro por vez.
-- **Bandeja:** ícone com a porcentagem da bateria; verde com um raio enquanto o mouse carrega no cabo (a % é atualizada a cada 15 s). Iniciar com o Windows, minimizado.
+- **Bandeja:** ícone com a porcentagem da bateria; verde, com um raio ao lado da porcentagem, enquanto o mouse carrega no cabo (a % é atualizada a cada 15 s). Iniciar com o Windows, minimizado.
 - **Com fio e sem fio:** funciona pelo receptor 2.4G e com o mouse ligado no cabo.
 - **Idioma:** inglês e português.
 

@@ -628,26 +628,26 @@ unsafe fn battery_icon(battery: i32) -> HICON {
         } else {
             (1.0 - ((t - 0.62) / 0.38).powi(2)).max(0.0).sqrt()
         };
-        28.0 - 17.5 * h
+        32.0 - 27.0 * h
     };
     let shell = |x: f32, y: f32| {
-        if !(0.0..32.0).contains(&x) || y > 28.0 || y < top(x) {
+        if !(0.0..32.0).contains(&x) || y > 32.0 || y < top(x) {
             return false;
         }
         // nariz (frente) arredondado embaixo
-        let r = 5.0;
-        let (cx, cy) = (r, 28.0 - r);
+        let r = 6.0;
+        let (cx, cy) = (r, 32.0 - r);
         if x < cx && y > cy && (x - cx).powi(2) + (y - cy).powi(2) > r * r {
             return false;
         }
         true
     };
     // rodinha: marca escura em cima, na frente
-    let (wx, wy) = (5.0, top(5.0) + 1.5);
+    let (wx, wy) = (4.5, top(4.5) + 1.8);
     let inside = shell;
     let wheel_mark = move |x: f32, y: f32| ((x - wx) / 2.0).powi(2) + ((y - wy) / 1.1).powi(2) <= 1.0;
-    // Raio amarelo (carregando), no canto de cima à esquerda, por cima do mouse.
-    const BOLT: [(f32, f32); 7] = [(9.5, 0.5), (2.0, 9.5), (5.8, 9.5), (3.5, 16.5), (11.5, 6.5), (7.6, 6.5), (11.0, 0.5)];
+    // Raio (carregando): escuro, dentro do corpo do mouse, à esquerda da porcentagem.
+    const BOLT: [(f32, f32); 7] = [(10.0, 12.0), (3.5, 21.5), (7.0, 21.5), (5.0, 30.0), (12.5, 19.0), (8.8, 19.0), (12.0, 12.0)];
     let in_bolt = |x: f32, y: f32| {
         let mut inside = false;
         let mut j = BOLT.len() - 1;
@@ -661,7 +661,7 @@ unsafe fn battery_icon(battery: i32) -> HICON {
         }
         inside
     };
-    let detail = wheel_mark;
+    let detail = move |x: f32, y: f32| if charging { in_bolt(x, y) } else { wheel_mark(x, y) };
     let mut body = vec![0u8; (S * S) as usize];
     let mut marks = vec![0u8; (S * S) as usize];
     const N: i32 = 4;
@@ -686,40 +686,28 @@ unsafe fn battery_icon(battery: i32) -> HICON {
     }
     let glyphs = render(&|dc| {
         let face = wide("Segoe UI");
-        let size = if text.len() >= 3 { 12 } else { 16 };
+        let size = match (charging, text.len() >= 3) {
+            (false, false) => 21,
+            (false, true) => 15,
+            (true, false) => 17,
+            (true, true) => 12,
+        };
         let f = CreateFontW(-size, 0, 0, 0, FW_BOLD as i32, 0, 0, 0, DEFAULT_CHARSET as u32, 0, 0, ANTIALIASED_QUALITY as u32, 0, face.as_ptr());
         let of = SelectObject(dc, f);
         SetBkMode(dc, TRANSPARENT as i32);
         SetTextColor(dc, 0xFFFFFF);
-        let mut r = RECT { left: 6, top: 12, right: S - 1, bottom: 28 };
+        let mut r = RECT { left: if charging { 12 } else { 4 }, top: 9, right: S, bottom: 30 };
         let mut w = wide(&text);
         DrawTextW(dc, w.as_mut_ptr(), (w.len() - 1) as i32, &mut r, DT_CENTER | DT_SINGLELINE | DT_VCENTER);
         SelectObject(dc, of);
         DeleteObject(f);
     });
     let low = (0..=15).contains(&battery) && !charging;
-    let mut bolt = vec![0u32; (S * S) as usize];
-    if charging {
-        for py in 0..S {
-            for px in 0..S {
-                let mut n = 0;
-                for sy in 0..N {
-                    for sx in 0..N {
-                        if in_bolt(px as f32 + (sx as f32 + 0.5) / N as f32, py as f32 + (sy as f32 + 0.5) / N as f32) {
-                            n += 1;
-                        }
-                    }
-                }
-                bolt[(py * S + px) as usize] = (n * 255 / (N * N)) as u32;
-            }
-        }
-    }
     let mut bgra = vec![0u8; (S * S * 4) as usize];
     for i in 0..(S * S) as usize {
         let a = body[i] as u32;
         let t = (glyphs[i] as u32).max(marks[i] as u32);
-        // corpo branco (ou vermelho com bateria baixa) com o texto escuro por cima
-        // verde carregando, vermelho com bateria baixa, senão branco
+        // corpo verde carregando, vermelho com bateria baixa, senão branco; texto e raio escuros
         let (br, bg, bb) = if charging {
             (90u32, 210u32, 110u32)
         } else if low {
@@ -728,13 +716,10 @@ unsafe fn battery_icon(battery: i32) -> HICON {
             (255, 255, 255)
         };
         let mix = |c: u32| (c * (255 - t) + 20 * t) / 255;
-        // raio amarelo por cima de tudo
-        let k = bolt[i];
-        let over = |c: u32, y: u32| (c * (255 - k) + y * k) / 255;
-        bgra[i * 4] = over(mix(bb), 0x40) as u8;
-        bgra[i * 4 + 1] = over(mix(bg), 0xd8) as u8;
-        bgra[i * 4 + 2] = over(mix(br), 0xff) as u8;
-        bgra[i * 4 + 3] = a.max(k) as u8;
+        bgra[i * 4] = mix(bb) as u8;
+        bgra[i * 4 + 1] = mix(bg) as u8;
+        bgra[i * 4 + 2] = mix(br) as u8;
+        bgra[i * 4 + 3] = a as u8;
     }
     if let Some(path) = ICON_DUMP.lock().unwrap().take() {
         dump_png(&path, &bgra, S as usize);

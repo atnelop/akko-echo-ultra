@@ -621,7 +621,9 @@ impl App {
         let title = label(ui, 38.0, 43.0, "<  TAN8 Ultra", 30.0, true, TEXT);
         if let Some(e) = &self.est {
             if e.bateria >= 0 {
-                let b = r(title.right() + 6.0, 36.0, title.right() + 34.0, 51.0);
+                // carregando: bateria mais larga, com um raio escuro dentro, à esquerda do número
+                let wide = if e.carregando { 44.0 } else { 28.0 };
+                let b = r(title.right() + 6.0, 36.0, title.right() + 6.0 + wide, 51.0);
                 let fill = if e.carregando {
                     Color32::from_rgb(90, 210, 110)
                 } else if e.bateria <= 15 {
@@ -631,13 +633,13 @@ impl App {
                 };
                 ui.painter().rect_filled(b, Rounding::same(3.0), fill);
                 ui.painter().rect_filled(r(b.right(), 40.5, b.right() + 2.5, 46.5), Rounding::same(1.0), Color32::from_rgb(0x9a, 0x9a, 0x9a));
-                ui.painter().text(b.center(), Align2::CENTER_CENTER, e.bateria.to_string(), font(11.0, true), Color32::BLACK);
+                let num_x = if e.carregando { b.center().x + 6.0 } else { b.center().x };
+                ui.painter().text(p(num_x, b.center().y), Align2::CENTER_CENTER, e.bateria.to_string(), font(11.0, true), Color32::BLACK);
                 if e.carregando {
-                    // raio ao lado da bateria
-                    let x = b.right() + 8.0;
-                    let green = Color32::from_rgb(90, 210, 110);
-                    ui.painter().add(Shape::convex_polygon(vec![p(x + 3.5, 35.5), p(x - 2.0, 44.0), p(x + 2.0, 44.0)], green, Stroke::NONE));
-                    ui.painter().add(Shape::convex_polygon(vec![p(x + 0.0, 41.0), p(x + 4.5, 41.0), p(x - 1.0, 51.5)], green, Stroke::NONE));
+                    let x = b.left() + 9.0;
+                    let dark = Color32::from_rgb(0x10, 0x30, 0x18);
+                    ui.painter().add(Shape::convex_polygon(vec![p(x + 3.5, 37.0), p(x - 3.0, 45.0), p(x + 1.5, 45.0)], dark, Stroke::NONE));
+                    ui.painter().add(Shape::convex_polygon(vec![p(x - 1.0, 42.5), p(x + 3.5, 42.5), p(x - 2.5, 50.0)], dark, Stroke::NONE));
                 }
             }
         }
