@@ -622,10 +622,23 @@ impl App {
         if let Some(e) = &self.est {
             if e.bateria >= 0 {
                 let b = r(title.right() + 6.0, 36.0, title.right() + 34.0, 51.0);
-                let fill = if e.bateria <= 15 { Color32::from_rgb(235, 60, 60) } else { Color32::WHITE };
+                let fill = if e.carregando {
+                    Color32::from_rgb(90, 210, 110)
+                } else if e.bateria <= 15 {
+                    Color32::from_rgb(235, 60, 60)
+                } else {
+                    Color32::WHITE
+                };
                 ui.painter().rect_filled(b, Rounding::same(3.0), fill);
                 ui.painter().rect_filled(r(b.right(), 40.5, b.right() + 2.5, 46.5), Rounding::same(1.0), Color32::from_rgb(0x9a, 0x9a, 0x9a));
                 ui.painter().text(b.center(), Align2::CENTER_CENTER, e.bateria.to_string(), font(11.0, true), Color32::BLACK);
+                if e.carregando {
+                    // raio ao lado da bateria
+                    let x = b.right() + 8.0;
+                    let green = Color32::from_rgb(90, 210, 110);
+                    ui.painter().add(Shape::convex_polygon(vec![p(x + 3.5, 35.5), p(x - 2.0, 44.0), p(x + 2.0, 44.0)], green, Stroke::NONE));
+                    ui.painter().add(Shape::convex_polygon(vec![p(x + 0.0, 41.0), p(x + 4.5, 41.0), p(x - 1.0, 51.5)], green, Stroke::NONE));
+                }
             }
         }
 
@@ -1036,7 +1049,11 @@ impl App {
         label(ui, 344.0, 270.0, t("device_name"), 15.0, true, TEXT);
         label(ui, 344.0, 321.0, &format!("{} {}", t("software"), env!("CARGO_PKG_VERSION")), 14.0, false, SOFT);
         let e = self.est.clone().unwrap_or_default();
-        let bat = if e.bateria >= 0 { format!("{}%", e.bateria) } else { "--".into() };
+        let bat = match (e.bateria >= 0, e.carregando) {
+            (true, true) => format!("{}% ({})", e.bateria, t("charging")),
+            (true, false) => format!("{}%", e.bateria),
+            _ => "--".into(),
+        };
         label(ui, 344.0, 372.0, &format!("{}: {bat}", t("battery")), 14.0, false, SOFT);
         let hz = if e.carregado { format!("{} Hz", e.polling_hz) } else { "--".into() };
         label(ui, 344.0, 410.0, &format!("{}: {hz}", t("polling_now")), 14.0, false, SOFT);

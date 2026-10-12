@@ -230,7 +230,9 @@ fn find_config_path() -> Option<Vec<u16>> {
             }
             let path = std::slice::from_raw_parts(p, len);
             let lower = String::from_utf16_lossy(path).to_lowercase();
-            if lower.contains("vid_38ee&pid_0024") && lower.contains("&col04") && has_config_caps(path) {
+            // PID 0024 = pelo receptor 2.4G; PID 0023 = mouse ligado no cabo (carregando).
+            let ours = lower.contains("vid_38ee&pid_0024") || lower.contains("vid_38ee&pid_0023");
+            if ours && lower.contains("&col04") && has_config_caps(path) {
                 let mut v = path.to_vec();
                 v.push(0);
                 found = Some(v);
@@ -448,13 +450,12 @@ impl Device {
         result
     }
 
-    pub fn battery(&self) -> Result<u8, Error> {
+    /// Resposta da bateria (bytes 8..16): o byte 0 é a porcentagem.
+    pub fn battery_raw(&self) -> Result<[u8; 8], Error> {
         let r = self.request(0x1a, 6, 0, &[])?;
-        if r[8] <= 100 {
-            Ok(r[8])
-        } else {
-            Err(Error::Unknown)
-        }
+        let mut b = [0u8; 8];
+        b.copy_from_slice(&r[8..16]);
+        Ok(b)
     }
 }
 

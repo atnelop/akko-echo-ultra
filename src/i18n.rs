@@ -150,6 +150,7 @@ const TEXTS: &[(&str, &str, &str)] = &[
     ("device_name", "Device name: TAN8 Ultra", "Dispositivo: TAN8 Ultra"),
     ("software", "Software: Akko Echo Ultra", "Programa: Akko Echo Ultra"),
     ("battery", "Battery", "Bateria"),
+    ("charging", "charging", "carregando"),
     ("polling_now", "Current polling rate", "Polling atual"),
     ("about_note", "Do not use together with the Akko app. Button remapping and macros: use the Akko app (this program pauses itself while it is open).", "Não use junto com o app da Akko. Remapear botões e macros: use o app da Akko (este programa pausa sozinho enquanto ele estiver aberto)."),
     // bandeja

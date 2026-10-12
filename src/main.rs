@@ -61,7 +61,9 @@ fn main() {
     unsafe { windows_sys::Win32::System::Diagnostics::Debug::AddVectoredExceptionHandler(1, Some(on_exception)) };
     let args: Vec<String> = std::env::args().skip(1).collect();
     if args.len() >= 3 && args[0] == "--icone-png" {
-        tray::dump_icon(&args[1], args[2].parse().unwrap_or(-1));
+        // "92c" = 92% carregando
+        let charging = args[2].ends_with('c');
+        tray::dump_icon(&args[1], args[2].trim_end_matches('c').parse().unwrap_or(-1), charging);
         return;
     }
     if args.iter().any(|a| a == "--ui") {

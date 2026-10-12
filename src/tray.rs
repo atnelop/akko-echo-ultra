@@ -35,6 +35,8 @@ static PREFS: Mutex<Option<Prefs>> = Mutex::new(None);
 static ESTADO: Mutex<Option<Estado>> = Mutex::new(None);
 /// Tabela dos botões lida do mouse (publicada junto com o estado).
 static BOTOES: Mutex<Option<Buttons>> = Mutex::new(None);
+/// Mouse carregando (no cabo): ícone verde com raio e bateria lida a cada 15 s.
+static CHARGING: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 static DEV_TX: OnceLock<Sender<Comando>> = OnceLock::new();
 static TASKBAR_CREATED: AtomicUsize = AtomicUsize::new(0);
 
@@ -67,6 +69,7 @@ fn publish(mem: Option<&Mem>, status: &str, battery: i32) {
         versao,
         status: status.into(),
         bateria: battery,
+        carregando: CHARGING.load(Ordering::Relaxed),
         prefs: p,
         autostart: autostart::is_enabled(),
         akko_autostart: autostart::akko_enabled(),
@@ -381,6 +384,7 @@ fn device_thread(rx: Receiver<Comando>) {
     let mut last_connect = Instant::now() - Duration::from_secs(60);
     let mut last_akko_check = Instant::now() - Duration::from_secs(60);
     let mut last_battery: Option<Instant> = None;
+    let mut last_battery_raw: Option<[u8; 8]> = None;
     let mut ui_alive_until = Instant::now();
     let mut akko = false;
     let mut chord = false;
@@ -522,6 +526,8 @@ fn device_thread(rx: Receiver<Comando>) {
         // de novo a cada 10 s.
         let period = if w.battery < 0 {
             10
+        } else if CHARGING.load(Ordering::Relaxed) {
+            15
         } else if now < ui_alive_until {
             60
         } else {
@@ -530,9 +536,18 @@ fn device_thread(rx: Receiver<Comando>) {
         if last_battery.map_or(true, |t| now - t >= Duration::from_secs(period)) {
             last_battery = Some(now);
             if let Some(d) = &w.dev {
-                match d.battery() {
-                    Ok(b) => {
-                        if b as i32 != w.battery {
+                match d.battery_raw() {
+                    Ok(raw) => {
+                        // Registra a resposta inteira quando muda (para descobrir o aviso de carga).
+                        if last_battery_raw != Some(raw) {
+                            crate::log(&format!("bateria (resposta): {}", raw.iter().map(|b| format!("{b:02x}")).collect::<Vec<_>>().join(" ")));
+                            last_battery_raw = Some(raw);
+                        }
+                        // byte 0 = porcentagem; byte 1 = 1 com o mouse no cabo, carregando
+                        let b = raw[0];
+                        let charging = raw[1] != 0;
+                        let was = CHARGING.swap(charging, Ordering::Relaxed);
+                        if b <= 100 && (b as i32 != w.battery || was != charging) {
                             w.battery = b as i32;
                             publish(w.mem.as_ref(), w.status, w.battery);
                         }
@@ -549,8 +564,9 @@ fn device_thread(rx: Receiver<Comando>) {
 /// Só para conferir o desenho: `--icone-png <arquivo> <bateria>` salva o ícone ampliado 8x.
 static ICON_DUMP: Mutex<Option<String>> = Mutex::new(None);
 
-pub fn dump_icon(path: &str, battery: i32) {
+pub fn dump_icon(path: &str, battery: i32, charging: bool) {
     *ICON_DUMP.lock().unwrap() = Some(path.to_string());
+    CHARGING.store(charging, Ordering::Relaxed);
     unsafe { DestroyIcon(battery_icon(battery)) };
 }
 
@@ -581,6 +597,7 @@ fn dump_png(path: &str, bgra: &[u8], s: usize) {
 unsafe fn battery_icon(battery: i32) -> HICON {
     const S: i32 = 32;
     let text = if battery >= 0 { battery.to_string() } else { "--".into() };
+    let charging = CHARGING.load(Ordering::Relaxed);
     // O texto é desenhado com GDI (máscara branca sobre preto); o mouse é calculado com
     // supersampling para as bordas ficarem suaves.
     let render = |draw: &dyn Fn(HDC)| -> Vec<u8> {
@@ -628,7 +645,23 @@ unsafe fn battery_icon(battery: i32) -> HICON {
     // rodinha: marca escura em cima, na frente
     let (wx, wy) = (5.0, top(5.0) + 1.5);
     let inside = shell;
-    let detail = move |x: f32, y: f32| ((x - wx) / 2.0).powi(2) + ((y - wy) / 1.1).powi(2) <= 1.0;
+    let wheel_mark = move |x: f32, y: f32| ((x - wx) / 2.0).powi(2) + ((y - wy) / 1.1).powi(2) <= 1.0;
+    // Raio amarelo (carregando), no canto de cima à esquerda, por cima do mouse.
+    const BOLT: [(f32, f32); 7] = [(9.5, 0.5), (2.0, 9.5), (5.8, 9.5), (3.5, 16.5), (11.5, 6.5), (7.6, 6.5), (11.0, 0.5)];
+    let in_bolt = |x: f32, y: f32| {
+        let mut inside = false;
+        let mut j = BOLT.len() - 1;
+        for i in 0..BOLT.len() {
+            let (xi, yi) = BOLT[i];
+            let (xj, yj) = BOLT[j];
+            if (yi > y) != (yj > y) && x < (xj - xi) * (y - yi) / (yj - yi) + xi {
+                inside = !inside;
+            }
+            j = i;
+        }
+        inside
+    };
+    let detail = wheel_mark;
     let mut body = vec![0u8; (S * S) as usize];
     let mut marks = vec![0u8; (S * S) as usize];
     const N: i32 = 4;
@@ -664,18 +697,44 @@ unsafe fn battery_icon(battery: i32) -> HICON {
         SelectObject(dc, of);
         DeleteObject(f);
     });
-    let low = (0..=15).contains(&battery);
+    let low = (0..=15).contains(&battery) && !charging;
+    let mut bolt = vec![0u32; (S * S) as usize];
+    if charging {
+        for py in 0..S {
+            for px in 0..S {
+                let mut n = 0;
+                for sy in 0..N {
+                    for sx in 0..N {
+                        if in_bolt(px as f32 + (sx as f32 + 0.5) / N as f32, py as f32 + (sy as f32 + 0.5) / N as f32) {
+                            n += 1;
+                        }
+                    }
+                }
+                bolt[(py * S + px) as usize] = (n * 255 / (N * N)) as u32;
+            }
+        }
+    }
     let mut bgra = vec![0u8; (S * S * 4) as usize];
     for i in 0..(S * S) as usize {
         let a = body[i] as u32;
         let t = (glyphs[i] as u32).max(marks[i] as u32);
         // corpo branco (ou vermelho com bateria baixa) com o texto escuro por cima
-        let (br, bg, bb) = if low { (235u32, 60u32, 60u32) } else { (255, 255, 255) };
+        // verde carregando, vermelho com bateria baixa, senão branco
+        let (br, bg, bb) = if charging {
+            (90u32, 210u32, 110u32)
+        } else if low {
+            (235, 60, 60)
+        } else {
+            (255, 255, 255)
+        };
         let mix = |c: u32| (c * (255 - t) + 20 * t) / 255;
-        bgra[i * 4] = mix(bb) as u8;
-        bgra[i * 4 + 1] = mix(bg) as u8;
-        bgra[i * 4 + 2] = mix(br) as u8;
-        bgra[i * 4 + 3] = a as u8;
+        // raio amarelo por cima de tudo
+        let k = bolt[i];
+        let over = |c: u32, y: u32| (c * (255 - k) + y * k) / 255;
+        bgra[i * 4] = over(mix(bb), 0x40) as u8;
+        bgra[i * 4 + 1] = over(mix(bg), 0xd8) as u8;
+        bgra[i * 4 + 2] = over(mix(br), 0xff) as u8;
+        bgra[i * 4 + 3] = a.max(k) as u8;
     }
     if let Some(path) = ICON_DUMP.lock().unwrap().take() {
         dump_png(&path, &bgra, S as usize);
@@ -737,6 +796,9 @@ unsafe fn update_icon(h: HWND, add: bool) {
     }
     if e.bateria >= 0 {
         tip += &format!("\n{}: {}%", t("battery"), e.bateria);
+        if e.carregando {
+            tip += &format!(" ({})", t("charging"));
+        }
     }
     set_tip(&mut nid, &tip);
     dbg("update_icon notify...");

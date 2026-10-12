@@ -114,6 +114,8 @@ pub struct Estado {
     /// "conectado", "procurando" ou "pausado" (Akko aberto)
     pub status: String,
     pub bateria: i32,
+    /// Mouse no cabo, carregando (segundo byte da resposta da bateria).
+    pub carregando: bool,
     pub carregado: bool,
     pub ativo: usize,
     pub estagios: Vec<Estagio>,
