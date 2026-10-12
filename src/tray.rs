@@ -598,8 +598,8 @@ unsafe fn battery_icon(battery: i32) -> HICON {
     const S: i32 = 32;
     let text = if battery >= 0 { battery.to_string() } else { "--".into() };
     let charging = CHARGING.load(Ordering::Relaxed);
-    // Com 100% não cabe o raio junto do número: só o mouse verde.
-    let bolt_on = charging && text.len() < 3;
+    // Carregando: raio dentro do mouse, ao lado do número (com 100%, números mais estreitos).
+    let bolt_on = charging;
     // O texto é desenhado com GDI (máscara branca sobre preto); o mouse é calculado com
     // supersampling para as bordas ficarem suaves.
     let render = |draw: &dyn Fn(HDC)| -> Vec<u8> {
@@ -650,7 +650,7 @@ unsafe fn battery_icon(battery: i32) -> HICON {
     let inside = shell;
     let wheel_mark = move |x: f32, y: f32| ((x - wx) / 2.0).powi(2) + ((y - wy) / 1.1).powi(2) <= 1.0;
     // Raio (carregando): escuro, dentro do corpo do mouse, à esquerda da porcentagem.
-    const BOLT: [(f32, f32); 7] = [(9.8, 11.0), (2.5, 21.0), (6.5, 21.0), (4.5, 30.0), (12.5, 18.5), (8.6, 18.5), (12.0, 11.0)];
+    const BOLT: [(f32, f32); 7] = [(9.6, 9.0), (2.6, 20.0), (6.4, 20.0), (4.4, 31.0), (12.4, 17.6), (8.6, 17.6), (12.0, 9.0)];
     let in_bolt = |x: f32, y: f32| {
         let mut inside = false;
         let mut j = BOLT.len() - 1;
@@ -689,12 +689,14 @@ unsafe fn battery_icon(battery: i32) -> HICON {
     }
     let glyphs = render(&|dc| {
         let face = wide("Segoe UI");
-        let size = match (bolt_on, text.len() >= 3) {
-            (true, _) => 20,
-            (false, false) => 24,
-            (false, true) => 17,
+        // (altura, largura média; 0 = normal). "100" carregando usa números estreitos.
+        let (size, width) = match (bolt_on, text.len() >= 3) {
+            (true, false) => (20, 0),
+            (true, true) => (18, 6),
+            (false, false) => (24, 0),
+            (false, true) => (17, 0),
         };
-        let f = CreateFontW(-size, 0, 0, 0, FW_BOLD as i32, 0, 0, 0, DEFAULT_CHARSET as u32, 0, 0, ANTIALIASED_QUALITY as u32, 0, face.as_ptr());
+        let f = CreateFontW(-size, width, 0, 0, FW_BOLD as i32, 0, 0, 0, DEFAULT_CHARSET as u32, 0, 0, ANTIALIASED_QUALITY as u32, 0, face.as_ptr());
         let of = SelectObject(dc, f);
         SetBkMode(dc, TRANSPARENT as i32);
         SetTextColor(dc, 0xFFFFFF);
