@@ -35,6 +35,8 @@ static PREFS: Mutex<Option<Prefs>> = Mutex::new(None);
 static ESTADO: Mutex<Option<Estado>> = Mutex::new(None);
 /// Tabela dos botões lida do mouse (publicada junto com o estado).
 static BOTOES: Mutex<Option<Buttons>> = Mutex::new(None);
+/// O mouse mandou um aviso (col03): lê a bateria já (ex.: o cabo entrou ou saiu).
+static BATTERY_NOW: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 /// Mouse carregando (no cabo): ícone verde com raio e bateria lida a cada 15 s.
 static CHARGING: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 static DEV_TX: OnceLock<Sender<Comando>> = OnceLock::new();
@@ -201,12 +203,21 @@ impl Worker {
     }
 
     /// Ativa um estágio (o polling é o mesmo para todos, como no app da Akko). Mostra o aviso.
+    /// Ativa um estágio e o polling dele (se tiver). Mostra o aviso.
     fn activate(&mut self, i: usize) {
         let Some(old) = self.mem.clone() else { return };
         let p = prefs();
-        let hz = old.polling_hz();
-        let ok = self.change(|m, _| m.set_active(i));
-        if ok && p.aviso {
+        let own = p.polling_por_estagio.get(i).copied().filter(|&hz| polling_code(hz).is_some());
+        let hz = own.unwrap_or(old.polling_hz());
+        let ok = self.change(|m, _| {
+            m.set_active(i);
+            if let Some(code) = own.and_then(polling_code) {
+                m.set_polling(code);
+            }
+        });
+        // Entrando em 8000 Hz o receptor pode parar de responder no meio da gravação, mas o
+        // estágio já foi gravado antes (ver Device::apply): o aviso aparece do mesmo jeito.
+        if (ok || hz == 8000) && p.aviso {
             let txt = t("stage_of").replacen("{}", &(i + 1).to_string(), 1).replacen("{}", &STAGES.to_string(), 1);
             osd::show(format!("{} DPI", old.dpi(i)), format!("{txt} \u{b7} {hz} Hz"), old.color(i), p.aviso_ms);
         }
@@ -224,6 +235,15 @@ impl Worker {
             Comando::Polling { hz } => {
                 if let Some(code) = polling_code(hz) {
                     self.change(|m, _| m.set_polling(code));
+                }
+            }
+            Comando::PollingEstagio { i, hz } if i < STAGES => {
+                if let Some(code) = polling_code(hz) {
+                    update_prefs(|p| p.polling_por_estagio[i] = hz);
+                    if self.mem.as_ref().map_or(false, |m| m.active() == i) {
+                        self.change(|m, _| m.set_polling(code));
+                    }
+                    publish(self.mem.as_ref(), self.status, self.battery);
                 }
             }
             Comando::Lod { v } if v <= 2 => {
@@ -385,7 +405,11 @@ fn device_thread(rx: Receiver<Comando>) {
     let mut last_akko_check = Instant::now() - Duration::from_secs(60);
     let mut last_battery: Option<Instant> = None;
     let mut last_battery_raw: Option<[u8; 8]> = None;
-    let mut ui_alive_until = Instant::now();
+    let mut battery_streak = 0i32;
+    // Tempo de uso (segundos com mouse/teclado mexendo) desde que saiu do cabo, para o registro
+    // da bateria.
+    let mut use_secs = 0u64;
+    let mut last_use_check = Instant::now();
     let mut akko = false;
     let mut chord = false;
     let mut last_game_check = Instant::now();
@@ -424,11 +448,6 @@ fn device_thread(rx: Receiver<Comando>) {
         if akko {
             continue;
         }
-        for c in &cmds {
-            if let Comando::UiViva = c {
-                ui_alive_until = now + Duration::from_secs(30);
-            }
-        }
 
         // Conecta e lê a memória (o mouse pode estar dormindo ou desligado).
         if w.mem.is_none() {
@@ -465,6 +484,12 @@ fn device_thread(rx: Receiver<Comando>) {
                     // (não grava nada se já estiver assim).
                     restore_light(&mut w);
                     restore_factory_bytes(&mut w);
+                    // Estágios ainda sem polling próprio ficam com o polling atual do mouse.
+                    if let Some(hz) = w.mem.as_ref().map(|m| m.polling_hz()) {
+                        if prefs().polling_por_estagio.iter().any(|&h| polling_code(h).is_none()) {
+                            update_prefs(|p| p.polling_por_estagio.iter_mut().filter(|h| polling_code(**h).is_none()).for_each(|h| *h = hz));
+                        }
+                    }
                 }
                 _ => {
                     fails += 1;
@@ -521,41 +546,115 @@ fn device_thread(rx: Receiver<Comando>) {
             }
         }
 
-        // Bateria: a cada 5 min, ou a cada minuto com a janela de configuração aberta. Enquanto
+        // Bateria: a cada minuto (2 s no cabo, 5 s carregando). Enquanto
         // não houver leitura (ex.: logo depois de ligar o PC, com o mouse ainda acordando), tenta
         // de novo a cada 10 s.
         let period = if w.battery < 0 {
             10
+        } else if w.dev.as_ref().map_or(false, |d| d.wired) {
+            // no cabo (sem o receptor no meio, o pedido não mexe o cursor): quase em tempo real
+            2
         } else if CHARGING.load(Ordering::Relaxed) {
-            15
-        } else if now < ui_alive_until {
-            60
-        } else {
+            5
+        } else if input_idle() >= Duration::from_secs(300) {
+            // PC sem uso há mais de 5 min: a cada 5 min (o mouse pode estar dormindo)
             300
+        } else {
+            // a cada minuto (o cabo pode entrar sem nenhum aviso do mouse)
+            60
         };
-        if last_battery.map_or(true, |t| now - t >= Duration::from_secs(period)) {
+        // aviso do mouse: lê já (no máximo uma vez a cada 2 s)
+        if BATTERY_NOW.swap(false, Ordering::Relaxed) && last_battery.map_or(true, |t| now - t >= Duration::from_secs(2)) {
+            last_battery = None;
+        }
+        // A leitura não mexe o cursor (medido com Raw Input em 1000 e 8000 Hz): lê também em jogo.
+        let due = last_battery.map_or(true, |t| now - t >= Duration::from_secs(period));
+        if now - last_use_check >= Duration::from_secs(1) {
+            last_use_check = now;
+            if CHARGING.load(Ordering::Relaxed) || w.dev.as_ref().map_or(false, |d| d.wired) {
+                use_secs = 0;
+            } else if input_idle() < Duration::from_secs(2) {
+                use_secs += 1;
+            }
+        }
+        if due {
             last_battery = Some(now);
             if let Some(d) = &w.dev {
                 match d.battery_raw() {
                     Ok(raw) => {
-                        // Registra a resposta inteira quando muda (para descobrir o aviso de carga).
-                        if last_battery_raw != Some(raw) {
-                            crate::log(&format!("bateria (resposta): {}", raw.iter().map(|b| format!("{b:02x}")).collect::<Vec<_>>().join(" ")));
-                            last_battery_raw = Some(raw);
+                        // Registra a resposta inteira quando muda; sem cabo, registra toda leitura com o
+                        // tempo de uso (para ver quando sai de 100% e quanto dura).
+                        let hex = raw.iter().map(|b| format!("{b:02x}")).collect::<Vec<_>>().join(" ");
+                        if !d.wired {
+                            crate::log(&format!("bateria: {}% (resposta {hex}), uso sem cabo: {} min", raw[0], use_secs / 60));
+                        } else if last_battery_raw != Some(raw) {
+                            crate::log(&format!("bateria (resposta): {hex}"));
                         }
-                        // byte 0 = porcentagem; byte 1 = 1 com o mouse no cabo, carregando
-                        let b = raw[0];
-                        let charging = raw[1] != 0;
+                        last_battery_raw = Some(raw);
+                        // byte 0 = porcentagem; byte 1 = 1 carregando, 2 carga completa (o mouse
+                        // continua dizendo 2 um tempo depois de sair do cabo: só vale no cabo)
+                        let b = raw[0] as i32;
+                        let full = raw[1] == 2 && d.wired;
+                        let charging = raw[1] == 1 || full;
                         let was = CHARGING.swap(charging, Ordering::Relaxed);
-                        if b <= 100 && (b as i32 != w.battery || was != charging) {
-                            w.battery = b as i32;
-                            publish(w.mem.as_ref(), w.status, w.battery);
+                        if b <= 100 {
+                            let shown = smooth_battery(w.battery, b, charging, full, &mut battery_streak);
+                            if shown != w.battery || was != charging {
+                                w.battery = shown;
+                                publish(w.mem.as_ref(), w.status, w.battery);
+                            }
                         }
                     }
-                    Err(e) => dbg(&format!("bateria: sem resposta ({e:?})")),
+                    Err(e) => {
+                        // Ex.: o cabo saiu e o mouse voltou para o receptor (outro aparelho USB):
+                        // reconecta já e lê a bateria de novo.
+                        crate::log(&format!("bateria sem resposta ({e:?}): reconectando"));
+                        CHARGING.store(false, Ordering::Relaxed);
+                        w.dev = None;
+                        w.mem = None;
+                        last_connect = now - Duration::from_secs(60);
+                    }
                 }
             }
         }
+    }
+}
+
+/// Tempo desde a última entrada (mouse ou teclado) no Windows.
+fn input_idle() -> Duration {
+    unsafe {
+        let mut li = LASTINPUTINFO { cbSize: std::mem::size_of::<LASTINPUTINFO>() as u32, dwTime: 0 };
+        if GetLastInputInfo(&mut li) == 0 {
+            return Duration::ZERO;
+        }
+        let ms = windows_sys::Win32::System::SystemInformation::GetTickCount().wrapping_sub(li.dwTime);
+        Duration::from_millis(ms as u64)
+    }
+}
+
+/// O mouse estima a carga pela tensão: carregando, ela sobe rápido e para em 99%; ao sair do cabo
+/// volta a 100%; em uso, oscila. Para o número não ir e voltar: carregando, só sobe; sem cabo, só
+/// desce, e só depois de duas leituras seguidas mais baixas (sobe só com duas leituras seguidas 5
+/// pontos acima: carregou sem o programa ver, ex.: com o PC desligado).
+fn smooth_battery(shown: i32, read: i32, charging: bool, full: bool, streak: &mut i32) -> i32 {
+    if shown < 0 || full {
+        *streak = 0;
+        return if full { 100 } else { read };
+    }
+    if charging {
+        *streak = 0;
+        return shown.max(read);
+    }
+    let dir = if read < shown { -1 } else if read >= shown + 5 { 1 } else { 0 };
+    if dir == 0 {
+        *streak = 0;
+        shown
+    } else if *streak == dir {
+        *streak = 0;
+        read
+    } else {
+        *streak = dir;
+        shown
     }
 }
 
@@ -973,6 +1072,15 @@ pub fn run(open_ui: bool) {
         let (tx, rx) = channel();
         let _ = DEV_TX.set(tx);
         std::thread::Builder::new().name("mouse".into()).spawn(move || device_thread(rx)).ok();
+        std::thread::Builder::new()
+            .name("avisos".into())
+            .spawn(|| {
+                crate::mouse::listen_notifications(|r| {
+                    crate::log(&format!("aviso do mouse: {}", r.iter().map(|b| format!("{b:02x}")).collect::<Vec<_>>().join(" ")));
+                    BATTERY_NOW.store(true, Ordering::Relaxed);
+                })
+            })
+            .ok();
         update_icon(h, true);
         if open_ui {
             spawn_ui();

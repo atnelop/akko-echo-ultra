@@ -14,11 +14,11 @@ BEGIN
     BEGIN
       VALUE "CompanyName", "github.com/atnelop/akko-echo-ultra"
       VALUE "FileDescription", "Akko Echo Ultra"
-      VALUE "FileVersion", "1.3.4"
+      VALUE "FileVersion", "1.3.5"
       VALUE "InternalName", "AkkoEchoUltra"
       VALUE "OriginalFilename", "AkkoEchoUltra.exe"
       VALUE "ProductName", "Akko Echo Ultra"
-      VALUE "ProductVersion", "1.3.4"
+      VALUE "ProductVersion", "1.3.5"
     END
   END
   BLOCK "VarFileInfo"

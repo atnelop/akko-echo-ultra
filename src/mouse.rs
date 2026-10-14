@@ -196,6 +196,12 @@ fn wide(s: &str) -> Vec<u16> {
 
 /// Caminho da interface de configuração (col04) do mouse, se conectado.
 fn find_config_path() -> Option<Vec<u16>> {
+    find_hid_path("&col04", true)
+}
+
+/// Caminho de uma coleção HID do mouse (ex.: "&col03"), preferindo o modo cabo (PID 0023).
+/// `config` exige relatórios de 64 bytes (a interface de configuração).
+fn find_hid_path(col: &str, config: bool) -> Option<Vec<u16>> {
     unsafe {
         let mut guid: GUID = zeroed();
         HidD_GetHidGuid(&mut guid);
@@ -203,7 +209,9 @@ fn find_config_path() -> Option<Vec<u16>> {
         if info as isize == -1 {
             return None;
         }
-        let mut found = None;
+        // O modo cabo (PID 0023) tem preferência: com o cabo ligado, o receptor pode continuar
+        // presente mas sem o mouse do outro lado.
+        let mut found: Option<Vec<u16>> = None;
         let mut i = 0;
         loop {
             let mut did: SP_DEVICE_INTERFACE_DATA = zeroed();
@@ -232,11 +240,16 @@ fn find_config_path() -> Option<Vec<u16>> {
             let lower = String::from_utf16_lossy(path).to_lowercase();
             // PID 0024 = pelo receptor 2.4G; PID 0023 = mouse ligado no cabo (carregando).
             let ours = lower.contains("vid_38ee&pid_0024") || lower.contains("vid_38ee&pid_0023");
-            if ours && lower.contains("&col04") && has_config_caps(path) {
+            if ours && lower.contains(col) && (!config || has_config_caps(path)) {
                 let mut v = path.to_vec();
                 v.push(0);
-                found = Some(v);
-                break;
+                let wired = lower.contains("pid_0023");
+                if wired || found.is_none() {
+                    found = Some(v);
+                }
+                if wired {
+                    break;
+                }
             }
         }
         SetupDiDestroyDeviceInfoList(info);
@@ -274,6 +287,8 @@ pub enum Error {
 pub struct Device {
     h: HANDLE,
     ev: HANDLE,
+    /// Conectado pelo cabo (PID 0023), não pelo receptor 2.4G.
+    pub wired: bool,
 }
 
 unsafe impl Send for Device {}
@@ -290,6 +305,7 @@ impl Drop for Device {
 impl Device {
     pub fn open() -> Option<Device> {
         let path = find_config_path()?;
+        let wired = String::from_utf16_lossy(&path).to_lowercase().contains("pid_0023");
         unsafe {
             let h = CreateFileW(
                 path.as_ptr(),
@@ -304,7 +320,7 @@ impl Device {
                 return None;
             }
             let ev = CreateEventW(null(), 1, 0, null());
-            Some(Device { h, ev })
+            Some(Device { h, ev, wired })
         }
     }
 
@@ -512,6 +528,31 @@ pub fn macro_bytes(events: &[MacroKey]) -> Vec<u8> {
     let total = out.len() as u16;
     out[2..4].copy_from_slice(&total.to_le_bytes());
     out
+}
+
+/// Escuta os avisos que o mouse manda sozinho (interface "col03": troca de DPI, etc.) e chama
+/// `on_report` para cada um. Só lê: não manda nada ao mouse (não mexe o cursor). Reabre sozinho
+/// quando o mouse troca entre o cabo e o receptor. Não retorna.
+pub fn listen_notifications(on_report: impl Fn(&[u8])) -> ! {
+    loop {
+        if let Some(path) = find_hid_path("&col03", false) {
+            unsafe {
+                let h = CreateFileW(path.as_ptr(), GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_WRITE, null(), OPEN_EXISTING, 0, null_mut());
+                if h != INVALID_HANDLE_VALUE {
+                    let mut buf = [0u8; 64];
+                    loop {
+                        let mut n = 0u32;
+                        if ReadFile(h, buf.as_mut_ptr(), buf.len() as u32, &mut n, null_mut()) == 0 {
+                            break;
+                        }
+                        on_report(&buf[..n as usize]);
+                    }
+                    CloseHandle(h);
+                }
+            }
+        }
+        std::thread::sleep(Duration::from_secs(3));
+    }
 }
 
 pub fn wide_str(s: &str) -> Vec<u16> {

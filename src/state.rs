@@ -33,6 +33,8 @@ pub struct Prefs {
     pub jogos: Vec<RegraJogo>,
     /// Ao sair do jogo, volta ao estágio que estava antes.
     pub jogo_voltar: bool,
+    /// Polling de cada estágio, em Hz, aplicado ao trocar para ele (0 = mantém o atual).
+    pub polling_por_estagio: [u32; 4],
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Default)]
@@ -81,6 +83,7 @@ impl Default for Prefs {
             macro_no_mouse: None,
             jogos: Vec::new(),
             jogo_voltar: true,
+            polling_por_estagio: [0; 4],
         }
     }
 }
@@ -151,8 +154,10 @@ pub enum Comando {
     Ativar { i: usize },
     Dpi { i: usize, dpi: u16 },
     Cor { i: usize, rgb: [u8; 3] },
-    /// Polling (o mesmo para todos os estágios), em Hz.
+    /// Polling do mouse agora, em Hz.
     Polling { hz: u32 },
+    /// Polling de um estágio de DPI, em Hz (muda também agora, se for o estágio ativo).
+    PollingEstagio { i: usize, hz: u32 },
     Lod { v: u8 },
     Debounce { v: u8 },
     Suspensao { s: u16 },

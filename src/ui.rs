@@ -622,8 +622,8 @@ impl App {
         if let Some(e) = &self.est {
             if e.bateria >= 0 {
                 // carregando: bateria mais larga, com um raio escuro dentro, à esquerda do número
-                let wide = if e.carregando { 44.0 } else { 28.0 };
-                let b = r(title.right() + 6.0, 36.0, title.right() + 6.0 + wide, 51.0);
+                let wide = if e.carregando { 50.0 } else { 34.0 };
+                let b = r(title.right() + 6.0, 33.0, title.right() + 6.0 + wide, 54.0);
                 let fill = if e.carregando {
                     Color32::from_rgb(90, 210, 110)
                 } else if e.bateria <= 15 {
@@ -632,14 +632,14 @@ impl App {
                     Color32::WHITE
                 };
                 ui.painter().rect_filled(b, Rounding::same(3.0), fill);
-                ui.painter().rect_filled(r(b.right(), 40.5, b.right() + 2.5, 46.5), Rounding::same(1.0), Color32::from_rgb(0x9a, 0x9a, 0x9a));
-                let num_x = if e.carregando { b.center().x + 6.0 } else { b.center().x };
-                ui.painter().text(p(num_x, b.center().y), Align2::CENTER_CENTER, e.bateria.to_string(), font(11.0, true), Color32::BLACK);
+                ui.painter().rect_filled(r(b.right(), 39.5, b.right() + 3.0, 47.5), Rounding::same(1.0), Color32::from_rgb(0x9a, 0x9a, 0x9a));
+                let num_x = if e.carregando { b.center().x + 7.0 } else { b.center().x };
+                ui.painter().text(p(num_x, b.center().y), Align2::CENTER_CENTER, e.bateria.to_string(), font(14.0, true), Color32::BLACK);
                 if e.carregando {
-                    let x = b.left() + 9.0;
+                    let x = b.left() + 10.0;
                     let dark = Color32::from_rgb(0x10, 0x30, 0x18);
-                    ui.painter().add(Shape::convex_polygon(vec![p(x + 3.5, 37.0), p(x - 3.0, 45.0), p(x + 1.5, 45.0)], dark, Stroke::NONE));
-                    ui.painter().add(Shape::convex_polygon(vec![p(x - 1.0, 42.5), p(x + 3.5, 42.5), p(x - 2.5, 50.0)], dark, Stroke::NONE));
+                    ui.painter().add(Shape::convex_polygon(vec![p(x + 4.5, 35.0), p(x - 4.0, 45.5), p(x + 2.0, 45.5)], dark, Stroke::NONE));
+                    ui.painter().add(Shape::convex_polygon(vec![p(x - 1.5, 42.0), p(x + 4.5, 42.0), p(x - 3.5, 52.0)], dark, Stroke::NONE));
                 }
             }
         }
@@ -908,15 +908,22 @@ impl App {
             ctx.set_cursor_icon(egui::CursorIcon::PointingHand);
         }
 
-        // Polling (o mesmo para todos os estágios, como no app da Akko)
-        label(ui, 301.0, 371.0, t("polling_rate"), 17.0, true, TEXT);
-        let cur_hz = e.polling_hz;
+        // Polling do estágio ativo (cada estágio tem o seu)
+        let pr = label(ui, 301.0, 371.0, t("polling_rate"), 17.0, true, TEXT);
+        label(ui, pr.right() + 14.0, 372.0, t("polling_hint"), 12.0, false, MUTED);
+        let cur_hz = match e.prefs.polling_por_estagio.get(sel).copied() {
+            Some(hz) if POLLING_HZ.contains(&hz) => hz,
+            _ => e.polling_hz,
+        };
         let labels: Vec<String> = POLLING_HZ.iter().map(|h| format!("{h} HZ")).collect();
         let idx = POLLING_HZ.iter().position(|&h| h == cur_hz).unwrap_or(3);
         if let Some(i) = self.ticked_slider(ui, "polling", 394.0, &labels, idx) {
             let hz = POLLING_HZ[i];
-            tray::send(&Comando::Polling { hz });
+            tray::send(&Comando::PollingEstagio { i: sel, hz });
             if let Some(est) = &mut self.est {
+                if let Some(h) = est.prefs.polling_por_estagio.get_mut(sel) {
+                    *h = hz;
+                }
                 est.polling_hz = hz;
             }
         }

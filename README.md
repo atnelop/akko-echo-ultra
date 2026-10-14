@@ -7,13 +7,14 @@ Programa próprio (Rust, nativo do Windows) para configurar o mouse **Akko TAN8 
 - **Button Assignment:** função de cada botão. Opções: botões do mouse, DPI+/DPI-/ciclo, teclas e atalhos (Ctrl/Shift/Alt/Win), multimídia, Office, macro e desativado. Também inverte esquerdo e direito e restaura o padrão.
 - **Performance:**
   - 4 estágios de DPI com cor.
-  - Polling rate (125 Hz a 8k Hz), o mesmo para todos os estágios.
+  - Polling rate (125 Hz a 8k Hz) por estágio de DPI: trocar de DPI pelo programa troca o polling junto.
   - Debounce, suspensão e LOD (0,7/1/2 mm).
   - Angle Snapping, Motion Sync e Ripple Control.
 - **Troca rápida de DPI:** esquerdo + meio + direito juntos trocam o estágio na hora, com um aviso no canto da tela mostrando o DPI.
 - **Games:** DPI por jogo. Com um jogo da lista em primeiro plano, o estágio de DPI dele é ativado sozinho; ao sair do jogo, volta ao DPI anterior.
 - **Macro:** grava sequências de teclas, com os tempos, e coloca o macro num botão. O mouse guarda um macro por vez.
-- **Bandeja:** ícone com a porcentagem da bateria; verde, com um raio ao lado da porcentagem, enquanto o mouse carrega no cabo (a % é atualizada a cada 15 s). Iniciar com o Windows, minimizado.
+- **Bandeja:** ícone com a porcentagem da bateria; verde, com um raio, enquanto o mouse carrega. A % é lida a cada minuto sem fio (a cada 5 min com o PC parado) e a cada 2 s no cabo, e não fica indo e voltando. Iniciar com o Windows, minimizado.
+- **RivaTuner / MSI Afterburner:** o instalador cria um perfil para o contador de FPS não aparecer na janela do programa.
 - **Com fio e sem fio:** funciona pelo receptor 2.4G e com o mouse ligado no cabo.
 - **Idioma:** inglês e português.
 

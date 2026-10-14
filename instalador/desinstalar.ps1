@@ -11,5 +11,6 @@ Start-Sleep 1
 Remove-ItemProperty 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Run' -Name 'Akko Echo Ultra'
 Remove-Item 'C:\ProgramData\Microsoft\Windows\Start Menu\Programs\Akko Echo Ultra.lnk' -Force
 Remove-Item 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\AkkoEchoUltra' -Recurse -Force
+Remove-Item (Join-Path ${env:ProgramFiles(x86)} 'RivaTuner Statistics Server\Profiles\AkkoEchoUltra.exe.cfg') -Force
 # A pasta (com os backups do Akko) é apagada depois que este script terminar.
 Start-Process cmd.exe -WindowStyle Hidden -ArgumentList "/c timeout /t 2 >nul & rmdir /s /q `"$dir`""

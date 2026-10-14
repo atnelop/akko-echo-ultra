@@ -68,7 +68,7 @@ $key = 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\AkkoEchoUltra'
 New-Item $key -Force | Out-Null
 $size = [int]((Get-ChildItem $dir -Recurse -File | Measure-Object Length -Sum).Sum / 1KB)
 $values = @{
-    DisplayName = 'Akko Echo Ultra'; DisplayVersion = '1.3.4'; Publisher = 'Akko Echo Ultra (projeto pessoal)'
+    DisplayName = 'Akko Echo Ultra'; DisplayVersion = '1.3.5'; Publisher = 'Akko Echo Ultra (projeto pessoal)'
     DisplayIcon = "$dir\AkkoEchoUltra.exe,0"; InstallLocation = $dir
     UninstallString = "powershell.exe -NoProfile -ExecutionPolicy Bypass -File `"$dir\desinstalar.ps1`""
 }
@@ -77,6 +77,14 @@ Set-ItemProperty $key -Name NoModify -Value 1 -Type DWord
 Set-ItemProperty $key -Name NoRepair -Value 1 -Type DWord
 Set-ItemProperty $key -Name EstimatedSize -Value $size -Type DWord
 $rel.Add('registrado em Aplicativos instalados')
+
+# RivaTuner (MSI Afterburner): a janela usa OpenGL e o RivaTuner mostra o contador de FPS nela
+# como se fosse um jogo. Um perfil para o programa com a detecção desligada evita isso.
+$rtss = Join-Path ${env:ProgramFiles(x86)} 'RivaTuner Statistics Server\Profiles'
+if ((Test-Path $rtss) -and -not (Test-Path "$rtss\AkkoEchoUltra.exe.cfg")) {
+    Set-Content "$rtss\AkkoEchoUltra.exe.cfg" "[Hooking]`r`nEnableHooking=0" -Encoding Ascii
+    $rel.Add('RivaTuner: perfil sem contador de FPS para o programa')
+}
 
 # App da Akko de volta ao original
 if (Test-Path "$akko\HookDLL_orig.dll") {
