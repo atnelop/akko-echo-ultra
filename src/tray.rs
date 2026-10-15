@@ -29,6 +29,8 @@ pub const WM_OPEN_UI: u32 = WM_APP + 3;
 const ID_OPEN: usize = 1;
 const ID_AUTOSTART: usize = 2;
 const ID_EXIT: usize = 3;
+/// Estágios de DPI no menu da bandeja: ID_STAGE + índice.
+const ID_STAGE: usize = 100;
 
 static HWND_TRAY: AtomicUsize = AtomicUsize::new(0);
 static PREFS: Mutex<Option<Prefs>> = Mutex::new(None);
@@ -901,6 +903,17 @@ unsafe fn update_icon(h: HWND, add: bool) {
 
 unsafe fn show_menu(h: HWND) {
     let menu = CreatePopupMenu();
+    // Estágios de DPI (com o polling de cada um): clicar ativa; o atual fica marcado.
+    let e = ESTADO.lock().unwrap().clone().unwrap_or_default();
+    if e.status == "conectado" && e.carregado && !e.estagios.is_empty() {
+        for (i, st) in e.estagios.iter().enumerate() {
+            let hz = e.prefs.polling_por_estagio.get(i).copied().filter(|&h| polling_code(h).is_some()).unwrap_or(e.polling_hz);
+            AppendMenuW(menu, MF_STRING, ID_STAGE + i, wide(&format!("{} DPI	{hz} Hz", st.dpi)).as_ptr());
+        }
+        let last = ID_STAGE + e.estagios.len() - 1;
+        CheckMenuRadioItem(menu, ID_STAGE as u32, last as u32, (ID_STAGE + e.ativo.min(e.estagios.len() - 1)) as u32, MF_BYCOMMAND);
+        AppendMenuW(menu, MF_SEPARATOR, 0, null());
+    }
     AppendMenuW(menu, MF_STRING | MF_DEFAULT, ID_OPEN, wide(t("tray_open")).as_ptr());
     let auto = if autostart::is_enabled() { MF_CHECKED } else { MF_UNCHECKED };
     AppendMenuW(menu, MF_STRING | auto, ID_AUTOSTART, wide(t("launch_startup")).as_ptr());
@@ -918,6 +931,7 @@ unsafe fn show_menu(h: HWND) {
             republish();
         }
         ID_EXIT => exit_app(h),
+        c if (ID_STAGE..ID_STAGE + STAGES).contains(&c) => handle_command(Comando::Ativar { i: c - ID_STAGE }),
         _ => {}
     }
 }
