@@ -144,7 +144,6 @@ struct App {
     est: Option<Estado>,
     est_mtime: Option<SystemTime>,
     last_poll: Instant,
-    last_alive: Instant,
     /// Quando a janela iniciou a bandeja sozinha (ela não estava rodando).
     tray_started: Option<Instant>,
     tray_missing_since: Option<Instant>,
@@ -469,7 +468,6 @@ impl App {
             est,
             est_mtime: None,
             last_poll: Instant::now(),
-            last_alive: Instant::now() - Duration::from_secs(60),
             tray_started: None,
             tray_missing_since: None,
             page: Page::Performance,
@@ -540,10 +538,6 @@ impl App {
                 let _ = std::process::Command::new(exe).arg("--bandeja").spawn();
             }
             crate::log("janela: bandeja não estava rodando; iniciada");
-        }
-        if self.last_alive.elapsed() > Duration::from_secs(15) {
-            self.last_alive = Instant::now();
-            tray::send(&Comando::UiViva);
         }
         // Envia edições pendentes (DPI e cor) depois de um tempo parado.
         if let Some((i, dpi, t)) = self.dpi_edit {
@@ -1020,31 +1014,21 @@ impl App {
             tray::send(&Comando::Autostart { on });
         }
 
-        label(ui, 301.0, 272.0, t("akko_startup"), 17.0, true, TEXT);
-        if e.akko_autostart {
-            label(ui, 301.0, 294.0, t("akko_startup_on"), 12.0, false, SOFT);
-            if pill(ui, r(301.0, 312.0, 411.0, 342.0), t("disable"), false).clicked() {
-                tray::send(&Comando::DesativarAkko);
-            }
-        } else {
-            label(ui, 301.0, 294.0, t("akko_startup_off"), 12.0, false, SOFT);
-        }
-
-        label(ui, 301.0, 377.0, t("osd_duration"), 17.0, true, TEXT);
+        label(ui, 301.0, 272.0, t("osd_duration"), 17.0, true, TEXT);
         for (k, ms) in AVISO_MS.into_iter().enumerate() {
             let x = 301.0 + k as f32 * 90.0;
             let text = format!("{}s", ms as f32 / 1000.0);
             let text = if i18n::is_pt() { text.replace('.', ",") } else { text };
-            if pill(ui, r(x, 397.0, x + 80.0, 427.0), &text, e.prefs.aviso_ms == ms).clicked() {
+            if pill(ui, r(x, 292.0, x + 80.0, 322.0), &text, e.prefs.aviso_ms == ms).clicked() {
                 self.send_prefs(|p| p.aviso_ms = ms);
             }
         }
 
-        label(ui, 301.0, 482.0, t("language"), 17.0, true, TEXT);
+        label(ui, 301.0, 377.0, t("language"), 17.0, true, TEXT);
         for (k, (code, name)) in [("en", "English"), ("pt", "Português")].into_iter().enumerate() {
             let x = 301.0 + k as f32 * 125.0;
             let cur = (code == "pt") == i18n::is_pt();
-            if pill(ui, r(x, 502.0, x + 115.0, 532.0), name, cur).clicked() && !cur {
+            if pill(ui, r(x, 397.0, x + 115.0, 427.0), name, cur).clicked() && !cur {
                 self.send_prefs(|p| p.idioma = code.to_string());
             }
         }

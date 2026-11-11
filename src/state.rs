@@ -133,7 +133,6 @@ pub struct Estado {
     pub botoes: Vec<[u8; 3]>,
     pub prefs: Prefs,
     pub autostart: bool,
-    pub akko_autostart: bool,
 }
 
 impl Estado {
@@ -154,8 +153,6 @@ pub enum Comando {
     Ativar { i: usize },
     Dpi { i: usize, dpi: u16 },
     Cor { i: usize, rgb: [u8; 3] },
-    /// Polling do mouse agora, em Hz.
-    Polling { hz: u32 },
     /// Polling de um estágio de DPI, em Hz (muda também agora, se for o estágio ativo).
     PollingEstagio { i: usize, hz: u32 },
     Lod { v: u8 },
@@ -174,8 +171,6 @@ pub enum Comando {
     RegravarMacro,
     Prefs { prefs: Prefs },
     Autostart { on: bool },
-    DesativarAkko,
-    UiViva,
 }
 
 pub fn write_atomic(name: &str, text: &str) {

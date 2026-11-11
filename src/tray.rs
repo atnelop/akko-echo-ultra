@@ -39,7 +39,7 @@ static ESTADO: Mutex<Option<Estado>> = Mutex::new(None);
 static BOTOES: Mutex<Option<Buttons>> = Mutex::new(None);
 /// O mouse mandou um aviso (col03): lê a bateria já (ex.: o cabo entrou ou saiu).
 static BATTERY_NOW: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
-/// Mouse carregando (no cabo): ícone verde com raio e bateria lida a cada 15 s.
+/// Mouse carregando: ícone verde com raio.
 static CHARGING: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 static DEV_TX: OnceLock<Sender<Comando>> = OnceLock::new();
 static TASKBAR_CREATED: AtomicUsize = AtomicUsize::new(0);
@@ -76,7 +76,6 @@ fn publish(mem: Option<&Mem>, status: &str, battery: i32) {
         carregando: CHARGING.load(Ordering::Relaxed),
         prefs: p,
         autostart: autostart::is_enabled(),
-        akko_autostart: autostart::akko_enabled(),
         ..Default::default()
     };
     if let Some(m) = mem {
@@ -204,7 +203,6 @@ impl Worker {
         }
     }
 
-    /// Ativa um estágio (o polling é o mesmo para todos, como no app da Akko). Mostra o aviso.
     /// Ativa um estágio e o polling dele (se tiver). Mostra o aviso.
     fn activate(&mut self, i: usize) {
         let Some(old) = self.mem.clone() else { return };
@@ -233,11 +231,6 @@ impl Worker {
             }
             Comando::Cor { i, rgb } if i < STAGES => {
                 self.change(|m, _| m.set_color(i, rgb));
-            }
-            Comando::Polling { hz } => {
-                if let Some(code) = polling_code(hz) {
-                    self.change(|m, _| m.set_polling(code));
-                }
             }
             Comando::PollingEstagio { i, hz } if i < STAGES => {
                 if let Some(code) = polling_code(hz) {
@@ -407,7 +400,10 @@ fn device_thread(rx: Receiver<Comando>) {
     let mut last_akko_check = Instant::now() - Duration::from_secs(60);
     let mut last_battery: Option<Instant> = None;
     let mut last_battery_raw: Option<[u8; 8]> = None;
+    let mut last_wired_check = Instant::now();
     let mut battery_streak = 0i32;
+    // Menor nível de bateria fraca já avisado na tela (15 ou 5); 100 = nenhum.
+    let mut low_warned = 100;
     // Tempo de uso (segundos com mouse/teclado mexendo) desde que saiu do cabo, para o registro
     // da bateria.
     let mut use_secs = 0u64;
@@ -417,6 +413,8 @@ fn device_thread(rx: Receiver<Comando>) {
     let mut last_game_check = Instant::now();
     // Jogo em primeiro plano agora: (executável, estágio de antes do jogo).
     let mut game: Option<(String, usize)> = None;
+    // Desde quando o jogo está fora do primeiro plano (só conta como saída depois de 3 s).
+    let mut away_since: Option<Instant> = None;
     publish(None, w.status, w.battery);
 
     loop {
@@ -453,8 +451,7 @@ fn device_thread(rx: Receiver<Comando>) {
 
         // Conecta e lê a memória (o mouse pode estar dormindo ou desligado).
         if w.mem.is_none() {
-            // Depois de várias falhas seguidas (ex.: receptor travado em 8 kHz), tenta menos vezes:
-            // cada pedido mexe o cursor ~1 px.
+            // Depois de várias falhas seguidas (ex.: receptor travado em 8 kHz), tenta menos vezes.
             let wait = if fails >= 5 { 15 } else { 3 };
             if now - last_connect < Duration::from_secs(wait) {
                 continue;
@@ -521,6 +518,8 @@ fn device_thread(rx: Receiver<Comando>) {
 
         // DPI por jogo: com um jogo da lista em primeiro plano, ativa o estágio dele; ao sair dele
         // (fechar ou Alt+Tab), volta ao estágio de antes. Só consulta o Windows, não o mouse.
+        // Perder o foco por um instante (aviso do Discord, overlay) não conta: cada troca grava DPI
+        // e polling no mouse, e isso no meio da partida soltava o botão segurado.
         if now - last_game_check >= Duration::from_secs(1) {
             last_game_check = now;
             let p = prefs();
@@ -538,12 +537,17 @@ fn device_thread(rx: Receiver<Comando>) {
                     }
                 }
                 (None, Some((exe, prev))) => {
-                    crate::log(&format!("saiu do jogo {exe}"));
-                    if p.jogo_voltar && w.mem.as_ref().map_or(false, |m| m.active() != prev) {
-                        w.activate(prev);
+                    let since = *away_since.get_or_insert(now);
+                    if now - since >= Duration::from_secs(3) {
+                        crate::log(&format!("saiu do jogo {exe}"));
+                        if p.jogo_voltar && w.mem.as_ref().map_or(false, |m| m.active() != prev) {
+                            w.activate(prev);
+                        }
+                        game = None;
+                        away_since = None;
                     }
-                    game = None;
                 }
+                (Some(_), Some(_)) => away_since = None,
                 _ => {}
             }
         }
@@ -554,7 +558,7 @@ fn device_thread(rx: Receiver<Comando>) {
         let period = if w.battery < 0 {
             10
         } else if w.dev.as_ref().map_or(false, |d| d.wired) {
-            // no cabo (sem o receptor no meio, o pedido não mexe o cursor): quase em tempo real
+            // no cabo: quase em tempo real
             2
         } else if CHARGING.load(Ordering::Relaxed) {
             5
@@ -565,11 +569,25 @@ fn device_thread(rx: Receiver<Comando>) {
             // a cada minuto (o cabo pode entrar sem nenhum aviso do mouse)
             60
         };
+        // Cabo ligado com o programa ainda no receptor: troca para o cabo já (o receptor continua
+        // presente e responderia a bateria antiga até a próxima leitura).
+        if now - last_wired_check >= Duration::from_secs(2) {
+            last_wired_check = now;
+            if w.dev.as_ref().map_or(false, |d| !d.wired) && crate::mouse::wired_present() {
+                crate::log("cabo conectado: trocando para o cabo");
+                w.dev = None;
+                w.mem = None;
+                last_connect = now - Duration::from_secs(60);
+                continue;
+            }
+        }
         // aviso do mouse: lê já (no máximo uma vez a cada 2 s)
         if BATTERY_NOW.swap(false, Ordering::Relaxed) && last_battery.map_or(true, |t| now - t >= Duration::from_secs(2)) {
             last_battery = None;
         }
-        // A leitura não mexe o cursor (medido com Raw Input em 1000 e 8000 Hz): lê também em jogo.
+        // A leitura não mexe o cursor (medido com Raw Input), mas pelo receptor não lê durante um
+        // jogo da lista nem com um botão do mouse segurado (pode soltar o botão, ex.: a mira).
+        // No cabo e na primeira leitura (ao abrir), lê sempre.
         let due = last_battery.map_or(true, |t| now - t >= Duration::from_secs(period));
         if now - last_use_check >= Duration::from_secs(1) {
             last_use_check = now;
@@ -579,18 +597,21 @@ fn device_thread(rx: Receiver<Comando>) {
                 use_secs += 1;
             }
         }
-        if due {
+        let wired = w.dev.as_ref().map_or(false, |d| d.wired);
+        if due && (wired || w.battery < 0 || (game.is_none() && !mouse_button_held())) {
             last_battery = Some(now);
             if let Some(d) = &w.dev {
                 match d.battery_raw() {
                     Ok(raw) => {
-                        // Registra a resposta inteira quando muda; sem cabo, registra toda leitura com o
-                        // tempo de uso (para ver quando sai de 100% e quanto dura).
-                        let hex = raw.iter().map(|b| format!("{b:02x}")).collect::<Vec<_>>().join(" ");
-                        if !d.wired {
-                            crate::log(&format!("bateria: {}% (resposta {hex}), uso sem cabo: {} min", raw[0], use_secs / 60));
-                        } else if last_battery_raw != Some(raw) {
-                            crate::log(&format!("bateria (resposta): {hex}"));
+                        // Registra a resposta inteira quando muda; sem cabo, com o tempo de uso (para
+                        // ver quanto a carga dura).
+                        if last_battery_raw != Some(raw) {
+                            let hex = raw.iter().map(|b| format!("{b:02x}")).collect::<Vec<_>>().join(" ");
+                            if d.wired {
+                                crate::log(&format!("bateria (resposta): {hex}"));
+                            } else {
+                                crate::log(&format!("bateria: {}% (resposta {hex}), uso sem cabo: {} min", raw[0], use_secs / 60));
+                            }
                         }
                         last_battery_raw = Some(raw);
                         // byte 0 = porcentagem; byte 1 = 1 carregando, 2 carga completa (o mouse
@@ -604,6 +625,13 @@ fn device_thread(rx: Receiver<Comando>) {
                             if shown != w.battery || was != charging {
                                 w.battery = shown;
                                 publish(w.mem.as_ref(), w.status, w.battery);
+                            }
+                            // Bateria fraca: aviso na tela ao chegar em 15% e em 5%.
+                            if charging || shown > 15 {
+                                low_warned = 100;
+                            } else if let Some(level) = [5, 15].into_iter().find(|&l| shown <= l && l < low_warned) {
+                                low_warned = level;
+                                osd::show(format!("{shown}%"), t("battery_low").to_string(), [235, 60, 60], 4000);
                             }
                         }
                     }
@@ -620,6 +648,11 @@ fn device_thread(rx: Receiver<Comando>) {
             }
         }
     }
+}
+
+/// Algum botão do mouse está pressionado agora.
+fn mouse_button_held() -> bool {
+    [VK_LBUTTON, VK_RBUTTON, VK_MBUTTON, VK_XBUTTON1, VK_XBUTTON2].iter().any(|&vk| unsafe { GetAsyncKeyState(vk as i32) } as u16 & 0x8000 != 0)
 }
 
 /// Tempo desde a última entrada (mouse ou teclado) no Windows.
@@ -960,7 +993,6 @@ fn republish() {
         cur.versao += 1;
         cur.prefs = prefs();
         cur.autostart = autostart::is_enabled();
-        cur.akko_autostart = autostart::akko_enabled();
         cur.save();
     }
     drop(g);
@@ -1005,10 +1037,6 @@ fn handle_command(c: Comando) {
         }
         Comando::Autostart { on } => {
             autostart::set_enabled(on);
-            republish();
-        }
-        Comando::DesativarAkko => {
-            autostart::disable_akko();
             republish();
         }
         other => {

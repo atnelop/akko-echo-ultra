@@ -140,9 +140,6 @@ const TEXTS: &[(&str, &str, &str)] = &[
     // configurações
     ("launch_startup", "Launch on Startup", "Iniciar com o Windows"),
     ("launch_startup_hint", "Starts minimized in the tray, next to the clock.", "Abre minimizado na bandeja, perto do relógio."),
-    ("akko_startup", "Akko app startup", "Inicialização do app da Akko"),
-    ("akko_startup_on", "The Akko app opens with Windows. While it is open, Akko Echo Ultra is paused.", "O app da Akko abre com o Windows. Com ele aberto, o Akko Echo Ultra fica pausado."),
-    ("akko_startup_off", "Disabled.", "Desativada."),
     ("disable", "Disable", "Desativar"),
     ("osd_duration", "Notification duration", "Duração do aviso"),
     ("language", "Language", "Idioma"),
@@ -151,6 +148,7 @@ const TEXTS: &[(&str, &str, &str)] = &[
     ("device_name", "Device name: TAN8 Ultra", "Dispositivo: TAN8 Ultra"),
     ("software", "Software: Akko Echo Ultra", "Programa: Akko Echo Ultra"),
     ("battery", "Battery", "Bateria"),
+    ("battery_low", "Low battery", "Bateria fraca"),
     ("charging", "charging", "carregando"),
     ("polling_now", "Current polling rate", "Polling atual"),
     ("about_note", "Do not use together with the Akko app. Button remapping and macros: use the Akko app (this program pauses itself while it is open).", "Não use junto com o app da Akko. Remapear botões e macros: use o app da Akko (este programa pausa sozinho enquanto ele estiver aberto)."),

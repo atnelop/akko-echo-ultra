@@ -13,7 +13,7 @@ Programa próprio (Rust, nativo do Windows) para configurar o mouse **Akko TAN8 
 - **Troca rápida de DPI:** esquerdo + meio + direito juntos trocam o estágio na hora, com um aviso no canto da tela mostrando o DPI.
 - **Games:** DPI por jogo. Com um jogo da lista em primeiro plano, o estágio de DPI dele é ativado sozinho; ao sair do jogo, volta ao DPI anterior.
 - **Macro:** grava sequências de teclas, com os tempos, e coloca o macro num botão. O mouse guarda um macro por vez.
-- **Bandeja:** ícone com a porcentagem da bateria; verde, com um raio, enquanto o mouse carrega. A % é lida a cada minuto sem fio (a cada 5 min com o PC parado) e a cada 2 s no cabo, e não fica indo e voltando. Clique com o botão direito no ícone para trocar de DPI (mostra todos os estágios, com o polling de cada um). Iniciar com o Windows, minimizado.
+- **Bandeja:** ícone com a porcentagem da bateria; verde, com um raio, enquanto o mouse carrega. A % é lida a cada minuto sem fio (a cada 5 min com o PC parado) e a cada 2 s no cabo, e não fica indo e voltando. Aviso na tela com bateria fraca (15% e 5%). Clique com o botão direito no ícone para trocar de DPI (mostra todos os estágios, com o polling de cada um). Iniciar com o Windows, minimizado.
 - **RivaTuner / MSI Afterburner:** o instalador cria um perfil para o contador de FPS não aparecer na janela do programa.
 - **Com fio e sem fio:** funciona pelo receptor 2.4G e com o mouse ligado no cabo.
 - **Idioma:** inglês e português.
@@ -59,7 +59,7 @@ Interface HID `col04`, relatórios de 64 bytes: `04 [checksum lo] [checksum hi] 
 Os detalhes estão nos comentários de `src/mouse.rs`.
 
 Cuidados descobertos na prática:
-- Cada pedido pelo receptor 2.4G move o cursor ~1 px, então o programa não faz consultas contínuas.
+- Durante um jogo da lista (DPI por jogo) o programa não fala com o mouse pelo receptor: a bateria só é lida fora do jogo ou no cabo.
 - Gravações parciais podem se perder: a memória é sempre gravada inteira.
 - Entrar em 8 kHz pelo software pode travar o receptor até desligar e ligar o mouse.
 

@@ -18,11 +18,14 @@ mod ui;
 
 use std::io::Write;
 
-/// Registro simples em %LOCALAPPDATA%\Akko Echo Ultra\echo.log (recomeça ao passar de 1 MB).
+/// Registro simples em %LOCALAPPDATA%\Akko Echo Ultra\echo.log. Ao passar de 1 MB vira
+/// echo.log.old (substituindo o anterior) e recomeça.
 pub fn log(msg: &str) {
     let path = state::data_dir().join("echo.log");
     if std::fs::metadata(&path).map_or(false, |m| m.len() > 1_000_000) {
-        let _ = std::fs::remove_file(&path);
+        let old = path.with_extension("log.old");
+        let _ = std::fs::remove_file(&old);
+        let _ = std::fs::rename(&path, &old);
     }
     if let Ok(mut f) = std::fs::OpenOptions::new().create(true).append(true).open(&path) {
         let t = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |d| d.as_secs());

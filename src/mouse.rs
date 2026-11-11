@@ -9,8 +9,9 @@
 //!   resposta: mesmo cabeçalho, dados a partir do índice 8
 //!
 //! Cuidados descobertos na prática (2026-10-10):
-//! - cada pedido faz o receptor gerar ~1 px de movimento falso no cursor: nada de consultas
-//!   periódicas frequentes;
+//! - ler a bateria e trocar de estágio não mexem o cursor (medido com Raw Input em 1000 e
+//!   8000 Hz), mas pelo receptor um pedido no meio do jogo pode soltar um botão segurado: a
+//!   bandeja não fala com o mouse durante um jogo da lista;
 //! - dois programas falando com o mouse ao mesmo tempo corrompem a memória: com o Akko aberto,
 //!   este programa não fala com o mouse;
 //! - gravações parciais podem ser perdidas (um bloco inteiro zerado) ao desligar/ligar o mouse:
@@ -197,6 +198,12 @@ fn wide(s: &str) -> Vec<u16> {
 /// Caminho da interface de configuração (col04) do mouse, se conectado.
 fn find_config_path() -> Option<Vec<u16>> {
     find_hid_path("&col04", true)
+}
+
+/// O mouse está ligado no cabo (aparece como PID 0023)? Só lista os aparelhos do Windows, não
+/// fala com o mouse. Com o cabo ligado o receptor continua presente e responde o valor antigo.
+pub fn wired_present() -> bool {
+    find_hid_path("&col04", false).map_or(false, |p| String::from_utf16_lossy(&p).to_lowercase().contains("pid_0023"))
 }
 
 /// Caminho de uma coleção HID do mouse (ex.: "&col03"), preferindo o modo cabo (PID 0023).
@@ -531,7 +538,7 @@ pub fn macro_bytes(events: &[MacroKey]) -> Vec<u8> {
 }
 
 /// Escuta os avisos que o mouse manda sozinho (interface "col03": troca de DPI, etc.) e chama
-/// `on_report` para cada um. Só lê: não manda nada ao mouse (não mexe o cursor). Reabre sozinho
+/// `on_report` para cada um. Só lê: não manda nada ao mouse. Reabre sozinho
 /// quando o mouse troca entre o cabo e o receptor. Não retorna.
 pub fn listen_notifications(on_report: impl Fn(&[u8])) -> ! {
     loop {
